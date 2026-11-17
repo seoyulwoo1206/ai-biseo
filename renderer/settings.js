@@ -1,0 +1,325 @@
+const api = window.assistant;
+const $ = (id) => document.getElementById(id);
+
+const DOT = {
+  cat: '#9fd3ff',
+  bunny: '#ffc8d6',
+  bear: '#d8a06c',
+  chick: '#ffdf55',
+  mochi: '#fbf9f4',
+  penguin: '#46598a',
+  frog: '#94d978',
+  puppy: '#f3dbb4',
+  panda: 'linear-gradient(90deg, #2b2b36 50%, #fbfbf8 50%)',
+  hamster: '#f6bb73',
+};
+const REMIND_OPTIONS = [0, 5, 10, 30];
+const SIZE_OPTIONS = [
+  [0.8, '작게'],
+  [1, '보통'],
+  [1.25, '크게'],
+  [1.5, '왕'],
+];
+
+function chip(label, on, onClick, color) {
+  const b = document.createElement('button');
+  b.className = 'chip' + (on ? ' on' : '');
+  if (color) {
+    const d = document.createElement('span');
+    d.className = 'dot';
+    d.style.background = color;
+    b.append(d);
+  }
+  const n = document.createElement('span');
+  n.className = 'name';
+  n.textContent = label;
+  b.append(n);
+  b.title = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function render(s) {
+  $('chars3d').replaceChildren(
+    ...s.characters3d.map((c) =>
+      chip(c.name, s.current === '3d:' + c.id, () => api.settings.setCharacter('3d:' + c.id), DOT[c.id]),
+    ),
+  );
+  $('charsImg').replaceChildren(
+    ...s.images.map((name) => {
+      const label = name.replace(/\.[^.]+$/, '');
+      const b = chip(label, s.current === name, () => api.settings.setCharacter(name), null);
+      // ✕ : 목록에서 지우기 (PC 는 휴지통으로 보내서 되살릴 수 있다)
+      if (api.settings.removeImage) {
+        const x = document.createElement('span');
+        x.className = 'chip-x';
+        x.textContent = '✕';
+        x.title = '이 그림 지우기';
+        // 확인은 칸 안에서 바로 묻는다. (confirm() 창을 띄우면 설정 창이 초점을 잃고 닫혀 버려서 지우기가 안 됐다)
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const ask = document.createElement('div');
+          ask.className = 'chip-confirm';
+          const q = document.createElement('span');
+          q.textContent = `"${label.length > 12 ? label.slice(0, 12) + '…' : label}" 지울까?`;
+          const yes = document.createElement('button');
+          yes.className = 'yes';
+          yes.textContent = '지우기';
+          yes.title = '컴퓨터에서는 휴지통으로 가요';
+          yes.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            yes.disabled = true;
+            api.settings.removeImage(name);
+          });
+          const no = document.createElement('button');
+          no.textContent = '아니';
+          no.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            ask.replaceWith(b);
+          });
+          ask.append(q, yes, no);
+          b.replaceWith(ask);
+        });
+        b.append(x);
+      }
+      return b;
+    }),
+  );
+
+  renderGrowth(s.growth, s.current);
+
+  $('remind').replaceChildren(
+    ...REMIND_OPTIONS.map((m) => {
+      const b = document.createElement('button');
+      b.textContent = m === 0 ? '정각' : `${m}분`;
+      b.title = m === 0 ? '정각에만 알려줘요' : `${m}분 전, 그리고 정각에 알려줘요`;
+      if (m === s.remindBefore) b.className = 'on';
+      b.addEventListener('click', () => api.settings.setRemind(m));
+      return b;
+    }),
+  );
+
+  // 휠로 조절한 크기는 가장 가까운 칸에 불을 켠다
+  const near = SIZE_OPTIONS.reduce((a, b) => (Math.abs(b[0] - s.size) < Math.abs(a[0] - s.size) ? b : a))[0];
+  $('size').replaceChildren(
+    ...SIZE_OPTIONS.map(([v, label]) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      if (v === near) b.className = 'on';
+      b.addEventListener('click', () => api.settings.setSize(v));
+      return b;
+    }),
+  );
+
+  $('autostart').checked = !!s.autoStart;
+
+  renderAI(s.ai);
+  renderLink(s.connect);
+
+  $('placeName').textContent = s.place ? s.place.name : '서울';
+  $('placeName').title = s.place ? `${s.place.admin || ''} ${s.place.name}`.trim() : '';
+  $('briefing').checked = !!s.briefing;
+  $('rainAlert').checked = !!s.rainAlert;
+  $('focusGuard').checked = !!s.focusGuard;
+
+  const fm = s.focusMinutes || 25;
+  $('focus').textContent = s.timer ? '⏹ 타이머 멈추기' : `🍅 집중 ${fm}분`;
+  $('focus').classList.toggle('running', !!s.timer);
+  // 집중 시간 고르기 (말로 정한 시간이 칸에 없으면 그 칸도 보여 준다)
+  const opts = [...new Set([...(s.focusOptions || [15, 25, 30, 45, 60, 90]), fm])].sort((a, b) => a - b);
+  $('focusLen').replaceChildren(
+    ...opts.map((m) => {
+      const b = document.createElement('button');
+      b.textContent = String(m);
+      b.title = `집중 ${m}분 · 쉬는 시간 ${m >= 80 ? 15 : m >= 45 ? 10 : 5}분`;
+      if (m === fm) b.className = 'on';
+      b.addEventListener('click', () => api.settings.setFocusMinutes(m));
+      return b;
+    }),
+  );
+
+  const HEALTH = [
+    ['water', '💧 물 마시기', '1시간마다'],
+    ['stretch', '🙆 스트레칭', '50분마다'],
+    ['eyes', '👀 눈 쉬기', '20분마다'],
+  ];
+  $('health').replaceChildren(
+    ...HEALTH.map(([key, label, every]) => {
+      const on = !!(s.health && s.health[key]);
+      const b = chip(label, on, () => api.settings.setHealth(key, !on), null);
+      b.title = `${every} 알려줘요 (누르면 ${on ? '끄기' : '켜기'})`;
+      return b;
+    }),
+  );
+
+  $('account').textContent = s.email ? `✅ ${s.email}` : '로그인 안 됨';
+  $('auth').textContent = s.email ? '로그아웃' : '로그인';
+  $('auth').onclick = () => (s.email ? api.settings.logout() : api.settings.login());
+}
+
+// ---------- 꾸미기 (레벨 · 아이템) ----------
+function renderGrowth(g, current) {
+  if (!g) return;
+  $('lvNum').textContent = `Lv.${g.level}`;
+  $('lvBar').style.width = `${Math.round((g.cur / g.need) * 100)}%`;
+  $('lvXp').textContent = `${g.cur} / ${g.need}`;
+  const isImage = current && !current.startsWith('3d:');
+  const none = chip('없음', !g.accessory, () => api.settings.setAccessory(null), null);
+  $('items').replaceChildren(
+    none,
+    ...g.items.map((it) => {
+      if (!it.unlocked) {
+        const b = chip(`🔒 Lv.${it.level}`, false, () => {}, null);
+        b.classList.add('locked');
+        b.title = `Lv.${it.level}이 되면 ${it.emoji} ${it.name}`;
+        return b;
+      }
+      const b = chip(`${it.emoji} ${it.name}`, g.accessory === it.id, () => api.settings.setAccessory(it.id), null);
+      if (isImage) b.title = '3D 캐릭터에만 달 수 있어요';
+      return b;
+    }),
+  );
+}
+
+// ---------- AI 연결 ----------
+let aiState = null;
+
+function renderAI(a) {
+  if (!a) return;
+  aiState = a;
+  $('aiProvider').replaceChildren(
+    ...a.providers.map((p) => {
+      const b = document.createElement('button');
+      b.textContent = `${p.name}${p.id === 'gemini' ? ' (무료)' : ' (유료)'}${p.hasKey ? ' ✓' : ''}`;
+      if (p.id === a.provider) b.className = 'on';
+      b.addEventListener('click', () => {
+        $('aiMsg').textContent = '';
+        api.settings.aiSet({ provider: p.id });
+      });
+      return b;
+    }),
+  );
+  const name = a.provider === 'claude' ? 'Claude' : '제미나이';
+  if (a.ready) {
+    const model = a.provider === 'claude' ? (a.claudeModels.find((m) => m.id === a.claudeModel) || {}).name : a.geminiModel;
+    $('aiStatus').textContent = `✅ ${name} 연결됨${model ? ' · ' + model : ''}`;
+    $('aiStatus').className = 'ai-status ok';
+    $('aiKey').placeholder = '다른 키로 바꾸려면 붙여 넣기';
+  } else {
+    $('aiStatus').textContent =
+      a.provider === 'claude'
+        ? 'Anthropic 콘솔에서 받은 키(sk-ant-…)를 넣어 줘. 쓴 만큼 요금이 나가.'
+        : '구글 AI Studio 에서 무료 키를 받아서 넣어 줘.';
+    $('aiStatus').className = 'ai-status';
+    $('aiKey').placeholder = 'API 키 붙여 넣기';
+  }
+  $('aiClear').style.display = a.ready ? '' : 'none';
+
+  const showModels = a.provider === 'claude';
+  $('claudeModels').style.display = showModels ? '' : 'none';
+  if (showModels) {
+    $('claudeModels').replaceChildren(
+      ...a.claudeModels.map((m) => {
+        const b = document.createElement('button');
+        b.textContent = m.name;
+        b.title = m.note;
+        if (m.id === a.claudeModel) b.className = 'on';
+        b.addEventListener('click', () => api.settings.aiSet({ claudeModel: m.id }));
+        return b;
+      }),
+    );
+  }
+}
+
+$('aiForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const key = $('aiKey').value.trim();
+  if (!key || !aiState) return;
+  $('aiSave').disabled = true;
+  $('aiMsg').className = 'ai-msg';
+  $('aiMsg').textContent = '키 확인하는 중…';
+  const r = await api.settings.aiSaveKey(aiState.provider, key);
+  $('aiSave').disabled = false;
+  if (r.ok) {
+    $('aiKey').value = '';
+    $('aiMsg').className = 'ai-msg ok';
+    $('aiMsg').textContent = '연결됐어! 물어보기에서 아무거나 물어봐 🎉';
+  } else {
+    $('aiMsg').className = 'ai-msg err';
+    $('aiMsg').textContent = r.message;
+  }
+});
+$('aiKeyPage').addEventListener('click', () => aiState && api.settings.aiKeyPage(aiState.provider));
+$('aiClear').addEventListener('click', () => {
+  if (aiState) api.settings.aiClearKey(aiState.provider);
+  $('aiMsg').textContent = '키를 지웠어.';
+});
+
+// ---------- 브리핑 · 날씨 ----------
+$('placeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('placeInput').value.trim();
+  if (!name) return;
+  $('placeResults').textContent = '찾는 중…';
+  const r = await api.settings.placeSearch(name);
+  if (!r.ok || !r.list.length) {
+    $('placeResults').textContent = r.ok ? '못 찾았어. 시·군·구 이름으로 다시 해 봐.' : r.message;
+    return;
+  }
+  $('placeResults').replaceChildren(
+    ...r.list.map((p) =>
+      chip(`${p.name}${p.admin && p.admin !== p.name ? ` (${p.admin})` : ''}`, false, () => {
+        api.settings.setPlace(p);
+        $('placeInput').value = '';
+        $('placeResults').replaceChildren();
+      }),
+    ),
+  );
+});
+for (const key of ['briefing', 'rainAlert', 'focusGuard']) {
+  $(key).addEventListener('change', (e) => api.settings.toggle(key, e.target.checked));
+}
+$('briefNow').addEventListener('click', () => api.settings.brief());
+
+$('close').addEventListener('click', () => api.settings.close());
+$('focus').addEventListener('click', () => api.settings.focus());
+$('askBtn').addEventListener('click', () => api.settings.ask());
+$('autostart').addEventListener('change', (e) => api.settings.setAutoStart(e.target.checked));
+$('import').addEventListener('click', () => api.settings.importImage());
+$('folder').addEventListener('click', () => api.settings.openFolder());
+$('today').addEventListener('click', () => api.settings.today());
+$('refresh').addEventListener('click', () => api.settings.refresh());
+$('quit').addEventListener('click', () => api.settings.quit());
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') api.settings.close();
+});
+
+api.settings.onUpdate(render);
+api.settings.get().then(render);
+
+// ---------- 다른 AI 앱 연결 (Claude 데스크톱) ----------
+let linkState = null;
+function renderLink(c) {
+  const sec = $('linkSection');
+  if (!c) {
+    sec.classList.add('off'); // 폰에는 없다
+    return;
+  }
+  linkState = c.claude;
+  const text = {
+    connected: '· 연결됨 ✅',
+    outdated: '· 다시 연결 필요',
+    none: c.claudeInstalled ? '· 안 됨' : '· 앱이 안 보여요',
+    error: '· 설정 파일 확인 필요',
+  }[c.claude];
+  $('linkState').textContent = text || '';
+  $('linkClaude').textContent = c.claude === 'connected' ? '연결 빼기' : c.claude === 'outdated' ? '다시 연결' : '연결하기';
+}
+$('linkClaude').addEventListener('click', async () => {
+  const btn = $('linkClaude');
+  btn.disabled = true;
+  const r = await api.settings.connectClaude(linkState === 'connected' ? 'remove' : 'install');
+  btn.disabled = false;
+  $('linkMsg').textContent = r.message;
+  $('linkMsg').className = 'ai-msg ' + (r.ok ? 'ok' : 'err');
+});

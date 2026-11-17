@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'" />
+    <title>AI 비서 설정</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <div class="panel">
+      <header>
+        <span class="title">⚙️ 설정</span>
+        <button id="close" class="icon" title="닫기">✕</button>
+      </header>
+
+      <div class="tools">
+        <button id="focus" class="tool focus">🍅 집중 25분</button>
+        <button id="askBtn" class="tool ask">💬 물어보기</button>
+      </div>
+      <div class="focus-len">
+        <span class="hint">🍅 집중 시간 (분)</span>
+        <div id="focusLen" class="seg full"></div>
+      </div>
+
+      <section>
+        <h2>캐릭터</h2>
+        <div id="chars3d" class="chips"></div>
+        <div id="charsImg" class="chips"></div>
+        <div class="row between">
+          <span title="캐릭터 위에서 마우스 휠을 굴려도 크기가 바뀌어요">크기 🖱️</span>
+          <div id="size" class="seg"></div>
+        </div>
+        <div class="row">
+          <button id="import" class="ghost">＋ 이미지 불러오기</button>
+          <button id="folder" class="ghost">폴더 열기</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>꾸미기 <small class="hint">할 일·집중으로 레벨 업</small></h2>
+        <div class="level">
+          <b id="lvNum">Lv.1</b>
+          <div class="lv-bar"><i id="lvBar"></i></div>
+          <span id="lvXp" class="lv-xp">0 / 50</span>
+        </div>
+        <div id="items" class="chips"></div>
+        <div class="hint lv-help">할 일 하나 +10 · 집중 한 번 +20 · 출석 +5</div>
+      </section>
+
+      <section>
+        <h2>일정 알림</h2>
+        <div class="row between">
+          <span>미리 알림</span>
+          <div id="remind" class="seg"></div>
+        </div>
+        <div class="row">
+          <button id="today" class="primary">📅 오늘 일정 보기</button>
+          <button id="refresh" class="ghost">새로고침</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>체크메이트</h2>
+        <div class="row between">
+          <span id="account">로그인 안 됨</span>
+          <button id="auth" class="ghost">로그인</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>브리핑 · 날씨</h2>
+        <form id="placeForm" class="row between">
+          <span>동네 <b id="placeName" class="place-name">서울</b></span>
+          <div class="row">
+            <input id="placeInput" class="key-input place-input" type="text" placeholder="예: 수원" autocomplete="off" />
+            <button id="placeFind" type="submit" class="ghost small">찾기</button>
+          </div>
+        </form>
+        <div id="placeResults" class="chips"></div>
+        <label class="row between switch-row">
+          <span>아침 브리핑 <small class="hint">아침에 처음 켤 때</small></span>
+          <input id="briefing" type="checkbox" class="switch" />
+        </label>
+        <label class="row between switch-row">
+          <span>비 오기 전에 알려주기</span>
+          <input id="rainAlert" type="checkbox" class="switch" />
+        </label>
+        <button id="briefNow" class="ghost">☀️ 지금 브리핑 보기</button>
+      </section>
+
+      <section>
+        <h2>AI 연결 <small class="hint">물어보기에서 모르는 것도 대답해요</small></h2>
+        <div id="aiProvider" class="seg full"></div>
+        <div id="aiStatus" class="ai-status"></div>
+        <form id="aiForm" class="row">
+          <input id="aiKey" class="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="API 키 붙여 넣기" />
+          <button id="aiSave" type="submit" class="ghost">저장</button>
+        </form>
+        <div id="claudeModels" class="seg full"></div>
+        <div class="row">
+          <button id="aiKeyPage" class="ghost small">🔑 키 받으러 가기</button>
+          <button id="aiClear" class="ghost small">키 지우기</button>
+        </div>
+        <div id="aiMsg" class="ai-msg"></div>
+      </section>
+
+      <section id="linkSection">
+        <h2>다른 AI 앱과 연결 <small class="hint">그 AI 가 나한테 일을 시켜요</small></h2>
+        <div class="row between">
+          <span>🔌 Claude 앱 <small id="linkState" class="hint"></small></span>
+          <button id="linkClaude" class="ghost small">연결하기</button>
+        </div>
+        <div class="hint link-help">Claude 앱 대화에서 "오늘 할 일 보고 계획 짜서 체크메이트에 넣어 줘", "50분 집중 켜 줘", "3시에 알려 줘"처럼 부탁할 수 있어요. 한 일은 캐릭터 말풍선에도 떠요.</div>
+        <div id="linkMsg" class="ai-msg"></div>
+      </section>
+
+      <section>
+        <h2>건강 알림 <small class="hint">켜 둔 것만, 집중할 땐 쉬어요</small></h2>
+        <div id="health" class="chips"></div>
+      </section>
+
+      <section>
+        <h2>기타</h2>
+        <label class="row between switch-row">
+          <span>집중할 때 딴짓 말리기 <small class="hint">유튜브·게임</small></span>
+          <input id="focusGuard" type="checkbox" class="switch" />
+        </label>
+        <label class="row between switch-row">
+          <span>컴퓨터 켤 때 자동 실행</span>
+          <input id="autostart" type="checkbox" class="switch" />
+        </label>
+      </section>
+
+      <footer>
+        <button id="quit" class="danger">비서 끄기</button>
+      </footer>
+    </div>
+    <script src="settings.js"></script>
+  </body>
+</html>

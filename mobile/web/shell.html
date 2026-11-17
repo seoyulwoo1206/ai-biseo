@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#eaf1ff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="AI 비서" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <title>AI 비서</title>
+    <link rel="stylesheet" href="shell.css" />
+  </head>
+  <body>
+    <div class="sky" aria-hidden="true"><i></i><i></i><i></i></div>
+    <header class="top">
+      <div class="brand"><span class="paw">🐾</span> AI 비서</div>
+      <nav class="actions">
+        <button id="bNotify" class="pill hidden" type="button">🔔 알림 켜기</button>
+        <button id="bFloat" class="round hidden" type="button" title="화면 위에 띄우기">🫧</button>
+        <button id="bToday" class="round" type="button" title="오늘 할 일">📅</button>
+        <button id="bAsk" class="round" type="button" title="물어보기">💬</button>
+        <button id="bSet" class="round" type="button" title="설정">⚙️</button>
+      </nav>
+    </header>
+    <main id="stageHost"></main>
+    <div id="scrim" class="scrim"></div>
+    <div id="install" class="install hidden">
+      <b>홈 화면에 추가하면 앱처럼 써요</b>
+      <span>공유 버튼 <span class="share">⬆︎</span> → <b>홈 화면에 추가</b></span>
+      <button id="installClose" type="button">✕</button>
+    </div>
+    <script src="backend.js"></script>
+    <script src="shell.js"></script>
+  </body>
+</html>

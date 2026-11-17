@@ -1,0 +1,55 @@
+/* 폰에서 PC 화면 파일을 쓸 때 덧붙이는 스타일 */
+
+html.mobile,
+html.mobile body {
+  -webkit-tap-highlight-color: transparent;
+  font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+}
+
+/* 캐릭터 화면: 아래쪽 안전 영역(아이폰 홈 막대) 위에 */
+html.mobile[data-page='main'] body {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  box-sizing: border-box;
+}
+
+/* 안드로이드 떠 있는 캐릭터: 화면 가장자리에서 말풍선 창이 안쪽으로 밀려도 캐릭터는 제자리에 */
+html.kind-android-overlay #stage {
+  translate: var(--shift, 0px) 0;
+}
+html.kind-android-overlay #bubble::after {
+  left: clamp(30px, calc(50% + var(--shift, 0px)), calc(100% - 30px));
+}
+html.kind-android-overlay body {
+  overflow: hidden;
+}
+
+/* 설정 · 물어보기: 바텀 시트 안에 꽉 차게 */
+html.mobile[data-page='settings'] .panel,
+html.mobile[data-page='ask'] .panel {
+  margin: 0;
+  height: 100%;
+  border-radius: 24px 24px 0 0;
+  box-shadow: none;
+  animation: none;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+}
+html.mobile[data-page='settings'] .panel {
+  -webkit-overflow-scrolling: touch;
+}
+html.mobile header {
+  -webkit-app-region: none;
+}
+
+/* 손가락으로 누르기 좋게 조금 크게 */
+html.mobile button,
+html.mobile .chip {
+  min-height: 34px;
+}
+html.mobile input {
+  font-size: 16px; /* 아이폰이 입력할 때 화면을 확대하지 않게 */
+}
+
+/* 로그인 화면 */
+html.mobile[data-page='login'] body {
+  padding: 24px 22px calc(env(safe-area-inset-bottom, 0px) + 24px);
+}

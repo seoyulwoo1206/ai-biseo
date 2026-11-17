@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'" />
+    <title>영역 고르기</title>
+    <link rel="stylesheet" href="snip.css" />
+  </head>
+  <body>
+    <img id="shot" alt="" draggable="false" />
+    <div id="dim"></div>
+    <div id="box" class="off"><span id="size"></span></div>
+
+    <!-- 위쪽 안내 + 언제나 누를 수 있는 버튼 (터치/태블릿 모드엔 Esc 가 없으니까) -->
+    <div id="bar">
+      <span id="hint">📸 물어볼 부분을 <b>손가락이나 마우스로 끌어서</b> 고르세요</span>
+      <button id="whole" type="button">🖥️ 화면 전체</button>
+      <button id="cancel" type="button">✕ 취소</button>
+    </div>
+
+    <!-- 고른 다음 네모 옆에 뜨는 확인 버튼 -->
+    <div id="tools" class="off">
+      <button id="ok" type="button" class="primary">✅ 이 부분 물어보기</button>
+      <button id="redo" type="button">↺ 다시</button>
+      <button id="cancel2" type="button">✕</button>
+    </div>
+    <script src="snip.js"></script>
+  </body>
+</html>

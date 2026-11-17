@@ -1,0 +1,502 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  font-family: 'Malgun Gothic', 'Segoe UI', sans-serif;
+  color: #2a2a35;
+  user-select: none;
+  overflow: hidden;
+}
+
+.panel {
+  box-sizing: border-box;
+  margin: 8px;
+  height: calc(100% - 16px);
+  padding: 14px 16px 12px;
+  border-radius: 20px;
+  background: #fffdfb;
+  box-shadow: 0 6px 22px rgba(40, 50, 90, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  animation: pop 0.22s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: drag;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #8a8fa3;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.between {
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+button {
+  font: inherit;
+  font-size: 12.5px;
+  border: 0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: transform 0.1s, background 0.15s;
+}
+
+button:active {
+  transform: scale(0.95);
+}
+
+.icon {
+  background: transparent;
+  color: #999;
+  padding: 4px 8px;
+}
+
+.icon:hover {
+  background: #f1f1f5;
+}
+
+.ghost {
+  background: #f1f2f7;
+  color: #3a3d4d;
+}
+
+.ghost:hover {
+  background: #e6e8f1;
+}
+
+.primary {
+  flex: 1;
+  background: #6c8cff;
+  color: #fff;
+}
+
+.primary:hover {
+  background: #5a7bf5;
+}
+
+.danger {
+  width: 100%;
+  background: #fff0f2;
+  color: #e0506a;
+}
+
+.danger:hover {
+  background: #ffe1e6;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips:empty {
+  display: none;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: #f4f5f9;
+  color: #3a3d4d;
+  border: 2px solid transparent;
+  max-width: 100%;
+}
+
+.chip span.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.chip .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.12);
+  flex: none;
+}
+
+.chip .chip-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin: 0 -3px 0 1px;
+  border-radius: 50%;
+  font-size: 9px;
+  color: #9a9eb0;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.chip-confirm {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 5px 4px 10px;
+  border-radius: 999px;
+  background: #fff1f3;
+  box-shadow: inset 0 0 0 1.5px #ffc9d2;
+  font-size: 12px;
+  color: #a33a4c;
+  max-width: 100%;
+}
+
+.chip-confirm span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-confirm button {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 0;
+  background: #ffffff;
+  color: #6a6f82;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chip-confirm button.yes {
+  background: #ff6b81;
+  color: #ffffff;
+}
+
+.chip .chip-x:hover {
+  color: #fff;
+  background: #ff6b81;
+}
+
+.chip.on {
+  border-color: #6c8cff;
+  background: #eef2ff;
+}
+
+.chip.locked {
+  color: #a8acbd;
+  background: #f7f7fa;
+  cursor: default;
+}
+
+/* 레벨 막대 */
+.level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.level b {
+  font-size: 15px;
+  color: #b0700a;
+}
+.lv-bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 6px;
+  background: #f3efe2;
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.lv-bar i {
+  display: block;
+  height: 100%;
+  min-width: 6px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #ffd25a, #ffb03b);
+  transition: width 0.5s cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+.lv-xp {
+  font-size: 11.5px;
+  color: #8b90a5;
+  font-variant-numeric: tabular-nums;
+}
+.lv-help {
+  display: block;
+  margin-top: 6px;
+}
+
+.seg {
+  display: flex;
+  background: #f1f2f7;
+  border-radius: 10px;
+  padding: 2px;
+}
+
+.seg button {
+  padding: 5px 9px;
+  font-size: 12px;
+  background: transparent;
+  color: #6a6f82;
+  border-radius: 8px;
+}
+
+.seg button.on {
+  background: #fff;
+  color: #3a3d4d;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+#account {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+}
+
+footer {
+  margin-top: auto;
+}
+
+.panel::-webkit-scrollbar {
+  width: 0;
+}
+
+/* 켜기/끄기 스위치 */
+.switch-row {
+  cursor: pointer;
+}
+
+.switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 23px;
+  margin: 0;
+  border-radius: 999px;
+  background: #dcdfe9;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.22s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.switch:checked {
+  background: #6c8cff;
+}
+
+.switch:checked::after {
+  transform: translateX(17px);
+}
+
+.hint {
+  margin-left: 4px;
+  font-size: 10.5px;
+  color: #a3a8ba;
+}
+
+/* 위쪽 도구 버튼 */
+.tools {
+  display: flex;
+  gap: 8px;
+}
+
+.tool {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.25);
+}
+
+.tool.focus {
+  background: linear-gradient(135deg, #ff6b6b, #ffa94d);
+}
+
+.tool.focus.running {
+  background: linear-gradient(135deg, #868e96, #adb5bd);
+}
+
+.tool.ask {
+  background: linear-gradient(135deg, #6c8cff, #a98bff);
+}
+
+.tool:hover {
+  filter: brightness(1.05);
+}
+
+/* 내용이 길면 얇은 스크롤바 */
+.panel::-webkit-scrollbar {
+  width: 5px;
+}
+.panel::-webkit-scrollbar-thumb {
+  background: #e3e5ee;
+  border-radius: 3px;
+}
+
+/* AI 연결 */
+.seg.full {
+  display: flex;
+}
+
+.seg.full button {
+  flex: 1;
+}
+
+.ai-status {
+  font-size: 11.5px;
+  color: #8a8fa3;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+
+.ai-status.ok {
+  color: #1f9e7a;
+  font-weight: 700;
+}
+
+.key-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: #f1f2f7;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.key-input:focus {
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(108, 140, 255, 0.5);
+}
+
+button.small {
+  padding: 5px 9px;
+  font-size: 11.5px;
+}
+
+.ai-msg {
+  min-height: 0;
+  font-size: 11.5px;
+  color: #6a6f82;
+  word-break: keep-all;
+}
+
+.ai-msg:empty {
+  display: none;
+}
+
+.ai-msg.ok {
+  color: #1f9e7a;
+}
+
+.ai-msg.err {
+  color: #e0506a;
+}
+
+.place-name {
+  margin-left: 4px;
+  color: #4a5bd8;
+}
+
+.place-input {
+  width: 96px;
+  flex: none;
+}
+
+#placeResults {
+  font-size: 11.5px;
+  color: #8a8fa3;
+}
+
+#placeResults:empty {
+  display: none;
+}
+
+/* 집중 시간 고르기 */
+.focus-len {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.focus-len .hint {
+  flex: none;
+  font-size: 11.5px;
+}
+
+.focus-len .seg {
+  flex: 1;
+}
+
+.focus-len .seg button {
+  padding: 5px 0;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+/* 다른 AI 앱과 연결 */
+#linkSection.off {
+  display: none;
+}
+
+.link-help {
+  display: block;
+  margin: 4px 0 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  word-break: keep-all;
+}

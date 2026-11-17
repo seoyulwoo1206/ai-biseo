@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'" />
+    <title>물어보기</title>
+    <link rel="stylesheet" href="ask.css" />
+  </head>
+  <body>
+    <div class="panel">
+      <header>
+        <span class="title">💬 물어보기</span>
+        <div class="head-btns">
+          <button id="tts" class="icon" title="대답을 소리로 읽어 주기">🔊</button>
+          <button id="close" class="icon" title="닫기 (Esc)">✕</button>
+        </div>
+      </header>
+
+      <div id="log" class="log">
+        <div class="msg bot">
+          <div class="avatar">🐾</div>
+          <div class="bubble">
+            <div class="b-text">무엇이든 물어봐! 말로 해도 돼.</div>
+            <div class="b-sub">시간·할 일·타이머·알림·검색은 내가 바로 해 줄게.</div>
+          </div>
+        </div>
+        <div id="chips" class="chips">
+          <button>지금 몇 시야?</button>
+          <button>오늘 할 일 알려줘</button>
+          <button>집중 시작</button>
+          <button>10분 뒤에 알려줘</button>
+          <button>내일 날씨</button>
+          <button>뭐 할 수 있어?</button>
+        </div>
+      </div>
+
+      <!-- 📸 화면 봐 주기: 어디를 찍을지 + 무엇을 해 줄지 -->
+      <div id="shotPanel" class="shot-panel off">
+        <div class="sp-title">📸 화면 보고 물어보기</div>
+        <div class="sp-kinds" id="spKinds">
+          <button type="button" data-kind="full" title="커서가 있는 모니터 전체">🖥️ 전체</button>
+          <button type="button" data-kind="window" title="지금 맨 앞에 있는 창만">🪟 지금 창</button>
+          <button type="button" data-kind="region" title="끌어서 고른 부분만 (작은 글자도 또렷하게)">✂️ 영역</button>
+        </div>
+        <div class="sp-modes" id="spModes"></div>
+        <div class="sp-hint">입력창에 적은 질문이 있으면 같이 보내요</div>
+      </div>
+
+      <form id="form" class="input-row">
+        <button id="mic" type="button" class="mic" title="말로 입력하기 (윈도우 음성 입력)">🎤</button>
+        <button id="shot" type="button" class="mic" title="화면 봐 주기: 지금 화면을 한 장 찍어서 적은 질문과 같이 AI 에게 물어봐요">📸</button>
+        <input id="input" type="text" placeholder="여기에 적거나 🎤 눌러서 말해 줘" autocomplete="off" maxlength="300" />
+        <button id="send" type="submit" class="send" title="보내기 (Enter)">➤</button>
+      </form>
+      <div id="hint" class="hint">Ctrl+Shift+Space 로 어디서든 열 수 있어요</div>
+    </div>
+    <script src="ask.js"></script>
+  </body>
+</html>

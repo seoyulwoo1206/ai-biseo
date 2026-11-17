@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>체크메이트 로그인</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px 28px;
+        font-family: 'Malgun Gothic', 'Segoe UI', sans-serif;
+        background: #f6f7fb;
+        color: #222;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 18px;
+      }
+      p {
+        margin: 0 0 18px;
+        font-size: 12.5px;
+        color: #666;
+      }
+      label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 12.5px;
+      }
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        margin-bottom: 12px;
+        padding: 9px 10px;
+        border: 1px solid #ccd;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+      button {
+        width: 100%;
+        padding: 10px;
+        border: 0;
+        border-radius: 8px;
+        background: #4a6cf7;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      #error {
+        min-height: 18px;
+        margin-top: 8px;
+        font-size: 12.5px;
+        color: #d33;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>♟️ 체크메이트 로그인</h1>
+    <p>체크메이트 계정으로 한 번만 로그인하면 일정을 읽어 와서 알려줘요.</p>
+    <form id="form">
+      <label for="email">이메일</label>
+      <input id="email" type="email" autocomplete="username" required autofocus />
+      <label for="password">비밀번호</label>
+      <input id="password" type="password" autocomplete="current-password" required />
+      <button id="submit" type="submit">로그인</button>
+      <div id="error"></div>
+    </form>
+    <script src="login.js"></script>
+  </body>
+</html>
