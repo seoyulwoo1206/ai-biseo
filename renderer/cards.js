@@ -209,6 +209,12 @@ function renderBrief(card) {
     else row('📅', '오늘은 일정이 없어');
     row('✅', card.todosTotal ? `할 일 ${card.todosLeft}개 남았어` : '오늘 할 일은 아직 없어', card.todosTotal ? `전체 ${card.todosTotal}개` : '');
   }
+  if (card.school) {
+    const sc = card.school;
+    if (sc.classes) row('📚', `오늘 수업 ${sc.classes.length}교시`, (sc.classesShort || sc.classes).slice(0, 7).join(' · '));
+    if (sc.meal) row('🍚', `${sc.meal.which}: ${sc.meal.dishes.slice(0, 3).join(', ')}`, sc.meal.dishes.slice(3).join(', '));
+  }
+  if (card.study) row('⏱️', card.study.text, card.study.sub);
   if (card.alarms && card.alarms.length) {
     row('⏰', `오늘 알람 ${card.alarms.length}개`, card.alarms.slice(0, 2).map((a) => a.when + (a.what ? ` ${a.what}` : '')).join(' · '));
   }
@@ -223,6 +229,50 @@ function renderBrief(card) {
     }
     root.append(dd);
   }
+  return root;
+}
+
+// 📊 집중 리포트: 총 시간 + 요일 막대 + 과목(목표)별
+function renderReport(card) {
+  const root = el('div', 'rp-card');
+  const head = el('div', 'rp-head');
+  head.append(el('div', 'rp-title', `📊 ${card.title}`));
+  const big = el('div', 'rp-total');
+  big.append(el('b', '', card.total ? card.totalText : '0분'));
+  if (card.compare) big.append(el('span', 'rp-cmp' + (card.up ? ' up' : ' down'), card.compare));
+  head.append(big);
+  root.append(head);
+
+  const max = Math.max(30, ...card.byDay);
+  const bars = el('div', 'rp-bars');
+  '월화수목금토일'.split('').forEach((d, i) => {
+    const col = el('div', 'rp-col' + (i === card.todayIndex ? ' today' : ''));
+    const bar = el('div', 'rp-bar');
+    const fill = el('i');
+    fill.style.setProperty('height', `${Math.round((card.byDay[i] / max) * 100)}%`);
+    bar.append(fill);
+    col.title = `${d}요일 ${card.byDay[i]}분`;
+    col.append(bar, el('span', '', d));
+    bars.append(col);
+  });
+  root.append(bars);
+
+  if (card.byGoal && card.byGoal.length) {
+    const list = el('div', 'rp-goals');
+    for (const g of card.byGoal) {
+      const r = el('div', 'rp-goal');
+      const line = el('div', 'rp-goal-line');
+      line.append(el('span', 'rp-goal-name', g.name), el('b', '', g.text));
+      const meter = el('div', 'rp-meter');
+      const f = el('i');
+      f.style.setProperty('width', `${Math.max(4, Math.round(g.ratio * 100))}%`);
+      meter.append(f);
+      r.append(line, meter);
+      list.append(r);
+    }
+    root.append(list);
+  } else root.append(el('div', 'rp-empty', '집중할 때 할 일을 고르면 과목별로 모아 줄게'));
+  if (card.foot) root.append(el('div', 'rp-foot', card.foot));
   return root;
 }
 
@@ -261,7 +311,9 @@ export function renderCard(bubble, card, { seconds, expanded = false, onMore, on
       ? renderToday(card, expanded, onMore, onTodo, onAdd)
       : card.kind === 'brief'
         ? renderBrief(card)
-        : renderSimple(card, onAction),
+        : card.kind === 'report'
+          ? renderReport(card)
+          : renderSimple(card, onAction),
   );
   const timer = el('div', 'b-timer');
   timer.style.animationDuration = `${seconds}s`;
@@ -275,6 +327,6 @@ export function renderCard(bubble, card, { seconds, expanded = false, onMore, on
   });
   bubble.replaceChildren(inner, timer, close);
   bubble.className = `tone-${card.tone || 'info'}`;
-  bubble.classList.toggle('wide', card.kind === 'today' || card.kind === 'brief');
+  bubble.classList.toggle('wide', card.kind === 'today' || card.kind === 'brief' || card.kind === 'report');
   bubble.classList.toggle('expanded', expanded);
 }

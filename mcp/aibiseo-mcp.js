@@ -33,7 +33,7 @@ const TOOLS = [
     name: 'get_today',
     title: '오늘 일정·할 일 보기',
     description:
-      "Read the user's day from their AI 비서 (desktop assistant linked to the 체크메이트 planner): today's schedule, to-dos with ids and done state, goals, D-days, the running focus/timer, upcoming alarms and reminders (with ids), the default focus length, and the character level. Call this first when planning the user's day or before changing a to-do.",
+      "Read the user's day from their AI 비서 (desktop assistant linked to the 체크메이트 planner): today's schedule, to-dos with ids and done state, goals, D-days, the running focus/timer, upcoming alarms and reminders (with ids), the default focus length, the character level, and (if set) today's school meals and class timetable. Call this first when planning the user's day or before changing a to-do.",
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
@@ -73,10 +73,13 @@ const TOOLS = [
     name: 'start_focus',
     title: '집중 타이머 시작',
     description:
-      "Start a focus (pomodoro) session on the user's desktop character. Leave minutes out to use the user's chosen default length. A short break timer follows automatically. Replaces any running timer.",
+      "Start a focus (pomodoro) session on the user's desktop character. Leave minutes out to use the user's chosen default length. Focus time is logged for the user's weekly study report (get_today → study_this_week). A short break timer follows automatically. Replaces any running timer.",
     inputSchema: {
       type: 'object',
-      properties: { minutes: { type: 'integer', minimum: 1, maximum: 180, description: 'Focus length in minutes (optional).' } },
+      properties: {
+        minutes: { type: 'integer', minimum: 1, maximum: 180, description: 'Focus length in minutes (optional).' },
+        todo_id: { type: 'string', description: "Optional id of today's to-do (from get_today) being worked on; study time is then logged under it and its goal." },
+      },
       additionalProperties: false,
     },
   },

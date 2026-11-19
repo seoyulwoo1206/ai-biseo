@@ -91,11 +91,25 @@ function release(e) {
 window.addEventListener('pointerup', release);
 window.addEventListener('pointercancel', release);
 
-$('ok').addEventListener('click', () => rect && finish(rect));
-$('redo').addEventListener('click', reset);
-$('cancel').addEventListener('click', () => finish(null));
-$('cancel2').addEventListener('click', () => finish(null));
-$('whole').addEventListener('click', () => finish({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }));
+// 버튼: 마우스는 click, 손가락·펜은 손을 뗄 때 바로 (터치에서 click 이 늦거나 안 오는 경우가 있어서)
+function tap(id, fn) {
+  const b = $(id);
+  let last = 0;
+  const run = () => {
+    if (Date.now() - last < 500) return; // 터치 뒤에 따라오는 click 은 한 번만
+    last = Date.now();
+    fn();
+  };
+  b.addEventListener('pointerup', (e) => {
+    if (e.pointerType !== 'mouse') run();
+  });
+  b.addEventListener('click', run);
+}
+tap('ok', () => rect && finish(rect));
+tap('redo', reset);
+tap('cancel', () => finish(null));
+tap('cancel2', () => finish(null));
+tap('whole', () => finish({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }));
 
 // 네모 안을 두 번 누르거나 Enter = 확인, Esc = 취소
 window.addEventListener('dblclick', (e) => {

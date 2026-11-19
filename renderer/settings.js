@@ -115,6 +115,7 @@ function render(s) {
 
   renderAI(s.ai);
   renderLink(s.connect);
+  renderSchool(s.school);
 
   $('placeName').textContent = s.place ? s.place.name : '서울';
   $('placeName').title = s.place ? `${s.place.admin || ''} ${s.place.name}`.trim() : '';
@@ -315,7 +316,8 @@ if (api.settings.onReveal)
   api.settings.onReveal(() => {
     const p = document.querySelector('.panel');
     p.scrollTop = 0;
-    for (const id of ['aiMsg', 'linkMsg']) $(id).textContent = '';
+    for (const id of ['aiMsg', 'linkMsg', 'schoolMsg']) $(id).textContent = '';
+    $('schoolResults').replaceChildren();
     $('placeResults').replaceChildren();
     $('placeInput').value = '';
     $('aiKey').value = '';
@@ -350,4 +352,106 @@ $('linkClaude').addEventListener('click', async () => {
   btn.disabled = false;
   $('linkMsg').textContent = r.message;
   $('linkMsg').className = 'ai-msg ' + (r.ok ? 'ok' : 'err');
+});
+
+// ---------- 학교 (급식·시간표) ----------
+let schoolState = null;
+function renderSchool(sc) {
+  const sec = $('schoolSection');
+  if (!sc || !api.settings.schoolSet) {
+    sec.classList.add('off'); // 폰에는 아직 없다
+    return;
+  }
+  schoolState = sc;
+  const name = $('schoolName');
+  name.textContent = sc.school ? sc.school.name : '아직 안 골랐어요';
+  name.classList.toggle('empty', !sc.school);
+  name.title = sc.school ? sc.school.name : '';
+  $('schoolInput').placeholder = sc.school ? '다른 학교' : '학교 이름';
+  document.querySelector('.school-more').classList.toggle('off', !sc.school);
+  if (!sc.school) return;
+
+  const maxGrade = /초등/.test(sc.school.kind || '') ? 6 : 3;
+  $('schoolGrade').replaceChildren(
+    ...Array.from({ length: maxGrade }, (_, i) => i + 1).map((g) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = String(g);
+      b.title = `${g}학년`;
+      if (g === sc.grade) b.className = 'on';
+      b.addEventListener('click', () => api.settings.schoolSet({ grade: g }));
+      return b;
+    }),
+  );
+  if (document.activeElement !== $('schoolCls')) $('schoolCls').value = sc.cls || '';
+  $('schoolBrief').checked = !!sc.mealBrief;
+  $('schoolAlert').checked = !!sc.classAlert;
+  if (document.activeElement !== $('bellStart')) $('bellStart').value = sc.start || '08:40';
+  $('classMin').replaceChildren(
+    ...[45, 50].map((m) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = String(m);
+      b.title = `수업 한 시간이 ${m}분`;
+      if (m === sc.classMin) b.className = 'on';
+      b.addEventListener('click', () => api.settings.schoolSet({ classMin: m }));
+      return b;
+    }),
+  );
+  $('neisToggle').textContent = sc.hasKey ? '🔑 나이스 키 넣음 ✓' : '🔑 7교시까지 보기';
+}
+
+$('schoolForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('schoolInput').value.trim();
+  if (!name) return;
+  $('schoolMsg').className = 'ai-msg';
+  $('schoolMsg').textContent = '찾는 중…';
+  const r = await api.settings.schoolSearch(name);
+  $('schoolMsg').textContent = '';
+  if (!r.ok || !r.list.length) {
+    $('schoolMsg').textContent = r.ok ? '못 찾았어. 학교 이름을 조금 더 정확히 써 줘 (예: OO고등학교)' : r.message;
+    return;
+  }
+  $('schoolResults').replaceChildren(
+    ...r.list.map((s) => {
+      const b = chip(s.name, false, () => {
+        api.settings.schoolSet({ school: s });
+        $('schoolInput').value = '';
+        $('schoolResults').replaceChildren();
+        $('schoolMsg').className = 'ai-msg ok';
+        $('schoolMsg').textContent = '골랐어! 학년·반도 알려 줘';
+      });
+      const where = document.createElement('small');
+      where.textContent = s.area;
+      b.append(where);
+      b.title = `${s.name} · ${s.area}`;
+      return b;
+    }),
+  );
+});
+$('schoolCls').addEventListener('change', (e) => {
+  const v = parseInt(e.target.value, 10);
+  if (v >= 1 && v <= 30) api.settings.schoolSet({ cls: v });
+});
+$('bellStart').addEventListener('change', (e) => {
+  if (/^\d{2}:\d{2}$/.test(e.target.value)) api.settings.schoolSet({ start: e.target.value });
+});
+$('schoolBrief').addEventListener('change', (e) => api.settings.schoolSet({ mealBrief: e.target.checked }));
+$('schoolAlert').addEventListener('change', (e) => api.settings.schoolSet({ classAlert: e.target.checked }));
+$('neisToggle').addEventListener('click', () => $('neisForm').classList.toggle('off'));
+$('neisPage').addEventListener('click', () => api.settings.aiKeyPage && api.settings.aiKeyPage('neis'));
+$('neisForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const key = $('neisKey').value.trim();
+  if (!key && !(schoolState && schoolState.hasKey)) return;
+  $('schoolMsg').className = 'ai-msg';
+  $('schoolMsg').textContent = '키 확인하는 중…';
+  const r = await api.settings.schoolKey(key);
+  $('schoolMsg').className = 'ai-msg ' + (r.ok ? 'ok' : 'err');
+  $('schoolMsg').textContent = r.message;
+  if (r.ok) {
+    $('neisKey').value = '';
+    $('neisForm').classList.add('off');
+  }
 });

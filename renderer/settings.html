@@ -72,6 +72,54 @@
         </div>
       </section>
 
+      <section id="schoolSection">
+        <h2>학교 <small class="hint">급식·시간표 (나이스)</small></h2>
+        <div class="card">
+          <form id="schoolForm" class="row between">
+            <span class="school-name"><b id="schoolName">아직 안 골랐어요</b></span>
+            <div class="row">
+              <input id="schoolInput" class="key-input place-input" type="text" placeholder="학교 이름" autocomplete="off" />
+              <button type="submit" class="ghost small">찾기</button>
+            </div>
+          </form>
+          <div id="schoolResults" class="chips"></div>
+          <div class="school-more">
+            <div class="row between line">
+              <span>학년 · 반</span>
+              <div class="row">
+                <div id="schoolGrade" class="seg"></div>
+                <input id="schoolCls" class="key-input cls-input" type="number" min="1" max="30" placeholder="반" />
+                <span class="unit">반</span>
+              </div>
+            </div>
+            <label class="row between switch-row line">
+              <span>브리핑에 급식·시간표</span>
+              <input id="schoolBrief" type="checkbox" class="switch" />
+            </label>
+            <label class="row between switch-row line">
+              <span>수업 5분 전 알림 <small class="hint">점심시간엔 메뉴도 알려줘요</small></span>
+              <input id="schoolAlert" type="checkbox" class="switch" />
+            </label>
+            <div class="row between line">
+              <span title="수업 길이(분)도 오른쪽에서 골라요">1교시 시작</span>
+              <div class="row">
+                <input id="bellStart" type="time" class="key-input time-input" />
+                <div id="classMin" class="seg"></div>
+              </div>
+            </div>
+            <div class="row links">
+              <button id="neisToggle" type="button" class="link">🔑 7교시까지 보기</button>
+              <button id="neisPage" type="button" class="link muted">키 받으러 가기</button>
+            </div>
+            <form id="neisForm" class="row off">
+              <input id="neisKey" class="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="나이스 인증키 붙여 넣기" />
+              <button type="submit" class="ghost small">저장</button>
+            </form>
+          </div>
+          <div id="schoolMsg" class="ai-msg"></div>
+        </div>
+      </section>
+
       <section>
         <h2>브리핑 · 날씨</h2>
         <div class="card">

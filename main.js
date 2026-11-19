@@ -17,12 +17,14 @@ const screenshot = require('./lib/screen');
 const log = require('./lib/log');
 const bridge = require('./lib/bridge');
 const connect = require('./lib/connect');
+const school = require('./lib/school');
+const studylog = require('./lib/studylog');
 
 // 자동 테스트(AI_SELFTEST)는 진짜 설정·키·레벨을 절대 건드리지 않게 임시 폴더를 쓴다.
 // 폴더가 다르면 '하나만 켜기' 잠금도 따로라서, 켜져 있는 진짜 비서를 끄지 않고도 시험할 수 있다.
 if (process.env.AI_SELFTEST) app.setPath('userData', path.join(os.tmpdir(), 'ai-assistant-selftest'));
 // 속도 재기: 시험 화면이 '가려진 창'으로 여겨져 그리기를 멈추지 않게
-if (process.env.AI_PERFTEST) {
+if (process.env.AI_PERFTEST || (process.env.AI_SELFTEST && process.env.AI_SELFTEST_SHOT)) {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('disable-background-timer-throttling');
@@ -586,6 +588,7 @@ async function settingsState() {
     focusMinutes: focusMinutes(),
     focusOptions: FOCUS_OPTIONS,
     connect: connectState(),
+    school: schoolState(),
     ai: ai.status(aiConfig()),
     email: user ? user.email : null,
     growth: growth.view(loadConfig().growth),
@@ -988,6 +991,11 @@ async function bridgeTool(name, args, client) {
           .map((a) => ({ id: a.id, kind: a.kind, what: a.what, when: whenText(a.at) })),
         default_focus_minutes: focusMinutes(),
         character: { level: lv.level, xp: lv.xp },
+        school: await schoolToday().catch((e) => ({ error: e.message })),
+        study_this_week: (() => {
+          const wk = studylog.weekReport(loadConfig().focusLog);
+          return { minutes: wk.total, last_week_minutes: wk.lastTotal, sessions: wk.sessions, by_goal: wk.byGoal.slice(0, 6), streak_days: wk.streak };
+        })(),
       };
     }
     case 'add_todo': {
@@ -1019,8 +1027,15 @@ async function bridgeTool(name, args, client) {
     case 'start_focus': {
       const m = args.minutes == null ? focusMinutes() : Math.round(Number(args.minutes));
       if (!(m >= 1 && m <= 180)) throw new Error('minutes must be 1..180');
-      startTimer('focus', m * 60);
-      return { started: 'focus', minutes: m, break_minutes_after: breakMinutesFor(m * 60) };
+      let todo = null;
+      if (args.todo_id) {
+        if (!today) await refresh();
+        const t = today && today.todos.find((x) => x.id === clip(args.todo_id, 64));
+        if (!t) throw new Error('no to-do with that id today (call get_today)');
+        todo = { id: t.id, title: t.title, goal: t.goal || null };
+      }
+      startTimer('focus', m * 60, { todo });
+      return { started: 'focus', minutes: m, todo: todo ? todo.title : null, break_minutes_after: breakMinutesFor(m * 60) };
     }
     case 'start_timer': {
       const m = Math.round(Number(args.minutes));
@@ -1102,7 +1117,58 @@ ipcMain.on('card-action', (_e, id) => {
     addAlarm(Date.now() + 5 * 60 * 1000, id.slice(7), 'alarm');
     say({ title: '5분 뒤에 다시 깨울게', tone: 'info', icon: '😴' }, 4);
   }
+  // 집중 시작할 때 고른 할 일
+  if (id.startsWith('ftodo:') && timer && timer.mode === 'focus') {
+    const t = today && today.todos.find((x) => x.id === id.slice(6));
+    if (t) {
+      timer.todo = { id: t.id, title: t.title, goal: t.goal || null };
+      say({ title: `좋아, "${t.title}" 집중! 🔥`, sub: t.goal ? `${t.goal} 시간으로 모아 둘게` : '옆에서 응원할게', tone: 'happy', icon: '🔥' }, 4);
+    } else say({ title: '좋아, 집중 시작! 🔥', tone: 'happy', icon: '🔥' }, 3);
+  }
+  // 집중 끝나고 "끝냈어"
+  if (id.startsWith('fdone:')) {
+    todoActionCore({ id: id.slice(6), op: 'done' }).then((r) =>
+      say({ title: r.ok ? r.message : '체크를 못 했어 😢', sub: r.ok ? '체크메이트에도 완료로 표시했어' : r.message, tone: r.ok ? 'happy' : 'sad', icon: r.ok ? '✅' : '😢' }, 6),
+    );
+  }
 });
+
+// 집중 기록 남기기 (끝까지 했으면 full)
+function logFocus(t, full) {
+  const min = full ? t.total / 60 : (Date.now() - (t.startedAt || Date.now())) / 60000;
+  if (min < studylog.MIN_MINUTES) return;
+  const entry = { at: t.startedAt || Date.now() - min * 60000, min, todo: t.todo ? t.todo.title : null, goal: t.todo ? t.todo.goal : null, dz: t.distractions || 0, full };
+  saveConfig({ focusLog: studylog.add(loadConfig().focusLog, entry) });
+}
+
+// 주간 리포트 카드
+function studyCard(last = false) {
+  const now = new Date();
+  if (last) now.setDate(now.getDate() - 7);
+  const r = studylog.weekReport(loadConfig().focusLog, now);
+  const diff = r.total - r.lastTotal;
+  return {
+    kind: 'report',
+    title: last ? '지난주 집중 기록' : '이번 주 집중 기록',
+    total: r.total,
+    totalText: studylog.hm(r.total),
+    compare: r.lastTotal ? `${last ? '그 전 주' : '지난주'}보다 ${diff >= 0 ? '+' : '-'}${studylog.hm(Math.abs(diff))}` : '',
+    up: diff >= 0,
+    byDay: r.byDay,
+    todayIndex: last ? -1 : (now.getDay() + 6) % 7,
+    byGoal: r.byGoal.slice(0, 4).map((g) => ({ name: g.name, text: studylog.hm(g.min), ratio: r.total ? g.min / r.total : 0 })),
+    foot: [
+      `집중 ${r.sessions}번${r.full ? ` (끝까지 ${r.full}번)` : ''}`,
+      r.streak > 1 ? `🔥 ${r.streak}일 연속` : '',
+      r.distractions || r.lastDistractions ? `딴짓 ${r.distractions}번${r.lastDistractions ? ` (지난주 ${r.lastDistractions})` : ''}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    tone: 'happy',
+    icon: '📊',
+    _r: r,
+  };
+}
 
 function timerState() {
   if (!timer) return null;
@@ -1113,13 +1179,30 @@ function sendTimer() {
   if (win && !win.isDestroyed()) win.webContents.send('timer', timerState());
 }
 
-function startTimer(mode, seconds) {
-  timer = { mode, total: seconds, endsAt: Date.now() + seconds * 1000 };
+function startTimer(mode, seconds, opts = {}) {
+  if (timer && timer.mode === 'focus') logFocus(timer, false); // 하던 집중을 바꾸면 거기까지 남긴다
+  timer = { mode, total: seconds, endsAt: Date.now() + seconds * 1000, startedAt: Date.now(), todo: opts.todo || null };
   sendTimer();
   pushSettings();
   const dur = intent.formatDuration(seconds);
   if (mode === 'focus') {
-    say({ title: `${dur} 집중 시작!`, sub: '옆에서 조용히 응원할게', tone: 'happy', icon: '🔥', react: 'cheer' }, 5);
+    // 오늘 남은 할 일이 있으면 "뭐 할 거야?" → 고른 할 일로 집중 시간을 기록한다
+    const left = today && !opts.todo ? today.todos.filter((t) => !t.done).slice(0, 3) : [];
+    if (left.length) {
+      say(
+        {
+          title: `${dur} 집중 시작! 뭐 할 거야?`,
+          sub: '고르면 그 할 일로 공부 시간을 모아 둘게',
+          tone: 'happy',
+          icon: '🔥',
+          react: 'cheer',
+          actions: [...left.map((t) => ({ id: `ftodo:${t.id}`, label: t.title.length > 12 ? t.title.slice(0, 12) + '…' : t.title })), { id: 'ftodo:none', label: '그냥 집중' }],
+        },
+        12,
+      );
+    } else {
+      say({ title: `${dur} 집중 시작!`, sub: opts.todo ? `"${opts.todo.title}" 하는 거지? 옆에서 응원할게` : '옆에서 조용히 응원할게', tone: 'happy', icon: '🔥', react: 'cheer' }, 5);
+    }
   } else if (mode === 'timer') {
     say({ title: `${dur} 타이머 시작!`, sub: '끝나면 알려줄게', tone: 'info', icon: '⏱️' }, 4);
   }
@@ -1127,6 +1210,7 @@ function startTimer(mode, seconds) {
 
 function stopTimer(announce) {
   const had = !!timer;
+  if (timer && timer.mode === 'focus') logFocus(timer, false); // 중간에 멈춰도 한 만큼은 남긴다
   timer = null;
   sendTimer();
   pushSettings();
@@ -1141,15 +1225,23 @@ function tickTimer() {
     timer = null;
     if (done.mode === 'focus') {
       setTimeout(() => grow([['focus', String(done.endsAt)]]), 1500);
+      logFocus(done, true);
       const breakMin = breakMinutesFor(done.total);
       const dz = done.distractions || 0;
+      const week = studylog.weekReport(loadConfig().focusLog);
       say(
         {
-          title: dz ? '집중 끝! 수고했어 🎉' : '집중 끝! 딴짓 없이 완벽했어 🎉',
-          sub: `${dz ? `딴짓 ${dz}번 · ` : ''}${breakMin}분 쉬자. 물도 한 잔 마시고!`,
+          title: done.todo ? `집중 끝! "${done.todo.title}" 끝냈어?` : dz ? '집중 끝! 수고했어 🎉' : '집중 끝! 딴짓 없이 완벽했어 🎉',
+          sub: `${dz ? `딴짓 ${dz}번 · ` : ''}${breakMin}분 쉬자 · 이번 주 ${studylog.hm(week.total)} 집중했어`,
           tone: 'happy',
           icon: '🍅',
           react: 'dance',
+          actions: done.todo
+            ? [
+                { id: `fdone:${done.todo.id}`, label: '✅ 끝냈어' },
+                { id: 'dismiss', label: '아직' },
+              ]
+            : undefined,
         },
         15,
       );
@@ -1327,6 +1419,229 @@ function greeting(h = new Date().getHours()) {
 }
 
 // 브리핑 카드 데이터 (renderer 의 renderBrief 가 그린다)
+// ======================================================================
+// 학교: 급식·시간표 (나이스 공개 API) — lib/school.js
+// ======================================================================
+const DAY_LABEL = { '-1': '어제', 0: '오늘', 1: '내일', 2: '모레' };
+
+function schoolCfg() {
+  const c = loadConfig().school;
+  return c && typeof c === 'object' ? c : {};
+}
+
+function neisKey() {
+  return keys.status('neis') === 'ok' ? keys.load('neis') : null;
+}
+
+function schoolState() {
+  const c = schoolCfg();
+  return {
+    school: c.school || null,
+    grade: c.grade || null,
+    cls: c.cls || null,
+    start: c.start || '08:40',
+    classMin: c.classMin || 50,
+    mealBrief: c.mealBrief !== false,
+    classAlert: !!c.classAlert,
+    hasKey: keys.status('neis') === 'ok',
+  };
+}
+
+function dayAfter(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d;
+}
+
+const MEAL_KO = { breakfast: '아침', lunch: '점심', dinner: '저녁' };
+
+async function mealAnswer({ meal = 'all', dayOffset = 0 }) {
+  const c = schoolCfg();
+  if (!c.school) return { text: '학교를 먼저 알려 줘! 🏫', sub: '설정 → 학교에서 학교 이름으로 찾아서 골라 줘' };
+  const day = DAY_LABEL[dayOffset] || '';
+  let m;
+  try {
+    m = await school.meals(c.school, dayAfter(dayOffset), neisKey());
+  } catch (e) {
+    return { text: '급식을 못 불러왔어 😢', sub: e.message };
+  }
+  const has = Object.keys(m);
+  if (!has.length) return { text: `${day}은 급식 정보가 없어`, sub: '주말·방학·재량휴업일일 수도 있어' };
+  const line = (k) => `${m[k].dishes.join(', ')}${m[k].kcal ? ` (${Math.round(m[k].kcal)}kcal)` : ''}`;
+  if (meal !== 'all') {
+    if (!m[meal]) return { text: `${day} ${MEAL_KO[meal]}은 급식이 없어`, sub: `있는 급식: ${has.map((k) => MEAL_KO[k]).join(', ')}` };
+    return { text: `${day} ${MEAL_KO[meal]} 🍚 ${line(meal)}`, sub: c.school.name };
+  }
+  const order = ['breakfast', 'lunch', 'dinner'].filter((k) => m[k]);
+  return { text: `${day} 급식 🍚\n` + order.map((k) => `${MEAL_KO[k]}: ${line(k)}`).join('\n'), sub: c.school.name };
+}
+
+async function dayTimetable(offset = 0) {
+  const c = schoolCfg();
+  if (!c.school || !c.grade || !c.cls) return null;
+  return school.timetable(c.school, c.grade, c.cls, dayAfter(offset), neisKey());
+}
+
+function bellOf() {
+  const c = schoolCfg();
+  return school.bellTimes({ start: c.start || '08:40', classMin: c.classMin || 50 }, 9);
+}
+
+async function timetableAnswer({ dayOffset = 0, period = null, next = false }) {
+  const c = schoolCfg();
+  if (!c.school) return { text: '학교를 먼저 알려 줘! 🏫', sub: '설정 → 학교에서 찾고 학년·반도 골라 줘' };
+  if (!c.grade || !c.cls) return { text: '몇 학년 몇 반인지 알려 줘!', sub: '설정 → 학교에서 학년·반을 골라 줘' };
+  const day = DAY_LABEL[dayOffset] || '';
+  let rows;
+  try {
+    rows = await dayTimetable(dayOffset);
+  } catch (e) {
+    return { text: '시간표를 못 불러왔어 😢', sub: e.message };
+  }
+  if (!rows.length) return { text: `${day}은 시간표가 없어`, sub: '주말·방학·시험 기간이거나 학교가 나이스에 안 올렸을 수 있어' };
+  const bell = bellOf();
+  const at = (p) => {
+    const b = bell.find((x) => x.period === p);
+    return b ? school.hm(b.start) : '';
+  };
+  const cut = !neisKey() && rows.length >= 5 ? '\n(6·7교시는 설정 → 학교에서 나이스 키를 넣으면 보여)' : '';
+  if (period) {
+    const r = rows.find((x) => x.period === period);
+    if (r) return { text: `${day} ${period}교시는 ${r.subject}야 📚`, sub: at(period) ? `${at(period)} 시작` : '' };
+    return { text: `${day} ${period}교시는 없어`, sub: cut.trim() };
+  }
+  if (next && dayOffset === 0) {
+    const now = nowMinutes();
+    const has = (p) => rows.some((r) => r.period === p);
+    const subj = (p) => rows.find((r) => r.period === p).subject;
+    const cur = bell.find((b) => b.start <= now && now < b.end && has(b.period));
+    const nxt = bell.find((b) => b.start > now && has(b.period));
+    if (cur && nxt) return { text: `지금은 ${cur.period}교시 ${subj(cur.period)}, 다음은 ${nxt.period}교시 ${subj(nxt.period)}야 📚`, sub: `${school.hm(nxt.start)} 시작` };
+    if (nxt) return { text: `다음 수업은 ${nxt.period}교시 ${subj(nxt.period)}야 📚`, sub: `${school.hm(nxt.start)} 시작 · ${nxt.start - now}분 남았어` };
+    if (cur) return { text: `지금 ${cur.period}교시 ${subj(cur.period)}가 마지막이야!`, sub: `${school.hm(cur.end)}에 끝나` };
+    return { text: '오늘 수업은 다 끝났어! 🎉', sub: `오늘 ${rows.length}교시까지 있었어` };
+  }
+  return {
+    text: `${day} 시간표 📚 (${rows.length}교시까지)\n` + rows.map((r) => `${r.period}교시 ${r.subject}`).join('\n') + cut,
+    sub: `${c.school.name} ${c.grade}학년 ${c.cls}반`,
+  };
+}
+
+// 브리핑용: 점심 메뉴 + 오늘 수업 (학교 정보가 있을 때만)
+// 다른 AI 앱(MCP)용: 오늘 급식·시간표 그대로
+async function schoolToday() {
+  const c = schoolCfg();
+  if (!c.school) return null;
+  const [m, rows] = await Promise.all([school.meals(c.school, new Date(), neisKey()), dayTimetable(0)]);
+  const bell = bellOf();
+  return {
+    name: c.school.name,
+    grade: c.grade || null,
+    class: c.cls || null,
+    meals: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.dishes])),
+    timetable: (rows || []).map((r) => {
+      const b = bell.find((x) => x.period === r.period);
+      return { period: r.period, subject: r.subject, start: b ? school.hm(b.start) : null };
+    }),
+    timetable_note: !neisKey() && rows && rows.length >= 5 ? 'Only periods 1-5 are visible without a NEIS key.' : undefined,
+  };
+}
+
+async function schoolBrief() {
+  const c = schoolCfg();
+  if (!c.school) return null;
+  const [m, rows] = await Promise.all([school.meals(c.school, new Date(), neisKey()).catch(() => ({})), dayTimetable(0).catch(() => null)]);
+  const meal = m.lunch || m.dinner || m.breakfast;
+  const which = m.lunch ? '점심' : m.dinner ? '저녁' : '아침';
+  if (!meal && !(rows && rows.length)) return null;
+  return {
+    meal: meal ? { which, dishes: meal.dishes.slice(0, 5) } : null,
+    classes: rows && rows.length ? rows.map((r) => r.subject) : null,
+    // 같은 과목이 연달아 있으면 한 번만 (블록 수업·시험날)
+    classesShort: rows && rows.length ? rows.map((r) => r.subject).filter((x, i, arr) => x !== arr[i - 1]) : null,
+  };
+}
+
+// 수업 5분 전 알림 + 점심시간 메뉴 (평일, 켜 둔 경우만)
+async function tickSchool() {
+  const c = schoolCfg();
+  if (!c.classAlert || !c.school || !c.grade || !c.cls || !win) return;
+  const d = new Date();
+  if (d.getDay() === 0 || d.getDay() === 6) return;
+  if (timer && timer.mode === 'focus') return; // 집중하는 동안은 조용히
+  let rows;
+  try {
+    rows = await dayTimetable(0);
+  } catch {
+    return;
+  }
+  if (!rows || !rows.length) return;
+  const now = nowMinutes();
+  const date = checkmate.dateKey(d);
+  const bell = bellOf();
+  for (const b of bell) {
+    const r = rows.find((x) => x.period === b.period);
+    if (!r) continue;
+    if (b.start - now === 5) {
+      notifyOnce(`${date}|class|${b.period}`, { title: `5분 뒤 ${b.period}교시 ${r.subject}!`, sub: `${school.hm(b.start)} 시작 · 준비물 챙겨`, icon: '📚', countdown: 5 });
+    }
+  }
+  // 점심시간 시작(4교시 끝) 에 메뉴
+  const fourth = bell.find((b) => b.period === 4);
+  if (fourth && now === fourth.end && rows.length > 4) {
+    const m = await school.meals(c.school, d, neisKey()).catch(() => ({}));
+    if (m.lunch) notifyOnce(`${date}|lunch`, { title: '점심시간! 🍚', sub: m.lunch.dishes.slice(0, 5).join(', '), icon: '🍚', tone: 'happy' });
+  }
+}
+
+ipcMain.handle('school:search', async (_e, name) => {
+  try {
+    return { ok: true, list: await school.search(String(name || '').slice(0, 30), neisKey()) };
+  } catch (e) {
+    return { ok: false, message: e.message };
+  }
+});
+
+ipcMain.on('school:set', (_e, patch) => {
+  if (!patch || typeof patch !== 'object') return;
+  const c = { ...schoolCfg() };
+  if (patch.school !== undefined) {
+    const s = patch.school;
+    c.school =
+      s && s.code && s.office
+        ? { name: String(s.name).slice(0, 40), office: String(s.office).slice(0, 5), code: String(s.code).slice(0, 10), kind: String(s.kind || '').slice(0, 10) }
+        : null;
+  }
+  if (patch.grade !== undefined) c.grade = Math.min(6, Math.max(1, parseInt(patch.grade, 10) || 1));
+  if (patch.cls !== undefined) c.cls = Math.min(30, Math.max(1, parseInt(patch.cls, 10) || 1));
+  if (patch.start !== undefined && /^\d{1,2}:\d{2}$/.test(patch.start)) c.start = patch.start;
+  if (patch.classMin !== undefined && [40, 45, 50].includes(Number(patch.classMin))) c.classMin = Number(patch.classMin);
+  if (patch.mealBrief !== undefined) c.mealBrief = !!patch.mealBrief;
+  if (patch.classAlert !== undefined) c.classAlert = !!patch.classAlert;
+  saveConfig({ school: c });
+  pushSettings();
+});
+
+ipcMain.handle('school:key', async (_e, key) => {
+  key = String(key || '').trim();
+  if (!key) {
+    keys.clear('neis');
+    school._cache.clear();
+    pushSettings();
+    return { ok: true, message: '나이스 키를 지웠어' };
+  }
+  if (!/^[0-9a-z]{20,64}$/i.test(key)) return { ok: false, message: '나이스 키는 영어·숫자로 된 긴 글자야. 다시 확인해 줘' };
+  try {
+    await school.search('서울', key); // 진짜 되는 키인지 한 번 불러 본다
+    keys.save('neis', key);
+    school._cache.clear();
+    pushSettings();
+    return { ok: true, message: '저장했어! 이제 7교시까지 다 보여 📚' };
+  } catch (e) {
+    return { ok: false, message: `키가 안 맞는 것 같아: ${e.message}` };
+  }
+});
+
 async function briefCard() {
   const d = new Date();
   const card = {
@@ -1352,6 +1667,13 @@ async function briefCard() {
   } else card.login = true;
   const end = new Date(d);
   end.setHours(23, 59, 59, 999);
+  if (schoolCfg().mealBrief !== false) card.school = await schoolBrief().catch(() => null);
+  {
+    const wk = studylog.weekReport(loadConfig().focusLog);
+    // 월요일 아침엔 지난주 기록, 그 밖엔 이번 주
+    if (d.getDay() === 1 && wk.lastTotal) card.study = { text: `지난주 ${studylog.hm(wk.lastTotal)} 집중했어`, sub: '"주간 리포트"라고 하면 자세히 보여줄게' };
+    else if (wk.total) card.study = { text: `이번 주 ${studylog.hm(wk.total)} 집중 중`, sub: wk.streak > 1 ? `🔥 ${wk.streak}일 연속` : '' };
+  }
   card.alarms = loadAlarms()
     .filter((a) => a.at <= end.getTime())
     .map((a) => ({ when: whenText(a.at).replace(/^오늘 /, ''), what: a.what && a.what !== '말한 시간' ? a.what : '' }));
@@ -1535,7 +1857,11 @@ async function askAboutShot(question, mode, followUp, st = ai.status(aiConfig())
   const s = lastShot;
   try {
     react('nod');
-    const r = await ai.ask(aiConfig(), question, askHistory, charName(), {
+    const isTodo = mode === screenshot.MODES.todo;
+    // 📌 할 일로: json 블록을 질문 바로 뒤에서 한 번 더 부탁한다 (기본 안내의 '마크다운 쓰지 마'보다 앞서게)
+    const JSON_ASK = '(이번 대답은 예외로, 맨 끝에 ```json 코드 블록 {"items":[{"title","due","time","note"}]} 을 꼭 붙여 줘)';
+    const asked = isTodo ? `${question}\n\n${JSON_ASK}` : question;
+    const r = await ai.ask(aiConfig(), asked, askHistory, charName(), {
       image: s.sent,
       zoom: screenshot.zoomer(s.native, s.sent),
       mode,
@@ -1550,7 +1876,29 @@ async function askAboutShot(question, mode, followUp, st = ai.status(aiConfig())
     const how = { '전체 화면': '🖥️', '맨 앞 창만': '🪟', '사용자가 직접 고른 영역': '✂️' };
     const icon = Object.entries(how).find(([k]) => s.info.includes(k));
     const zoomNote = r.zooms ? ` · 🔎 ${r.zooms}번 확대해서 봤어` : '';
+    // 📌 할 일로: 대답 끝의 json 에서 할 일 목록을 꺼내 확인 칸으로 보여 준다
+    let todos;
+    if (isTodo) {
+      let ex = screenshot.extractTodos(r.text);
+      if (!ex.items) {
+        // 그래도 json 이 없으면 대답 글을 짧게 한 번 더 바꿔 달라고 한다 (사진 없이, 글만)
+        const today = checkmate.dateKey();
+        const convAsk = [
+          `오늘은 ${today}야. 아래 글에 나온 할 일을 json 하나로만 바꿔 줘. 다른 말은 쓰지 마.`,
+          '모양: {"items":[{"title":"25자 이내, 과목명을 앞에","due":"YYYY-MM-DD 또는 null","time":"HH:MM 또는 null","note":"아주 짧게"}]}',
+          '',
+          '글:',
+          r.text,
+        ].join('\n');
+        const conv = await ai.ask(aiConfig(), convAsk, [], charName(), null).catch(() => null);
+        const ex2 = conv ? screenshot.extractTodos(conv.text) : { items: null };
+        if (ex2.items) ex = { text: ex.text, items: ex2.items };
+      }
+      r.text = ex.text || (ex.items && ex.items.length ? '이렇게 찾았어!' : '해야 할 일을 못 찾았어.');
+      todos = ex.items || [];
+    }
     return {
+      todos,
       text: r.text,
       sub: `${icon ? icon[1] : '📸'} ${followUp ? '같은 화면으로 이어서' : '화면을 보고'} ${who}가 대답했어 · ${mode.emoji} ${mode.label}${zoomNote}`,
       buttons: (r.sources || []).map((src) => ({ label: src.title, action: 'link', url: src.url })),
@@ -1655,6 +2003,25 @@ async function answer(input) {
     case 'weather':
       react('lookAround');
       return weatherAnswer(r.when);
+    case 'study-report': {
+      const card = studyCard(r.last);
+      const rr = card._r;
+      delete card._r;
+      say(card, 20);
+      react(rr.total ? 'happy' : 'nod');
+      if (!rr.total) return { text: `${r.last ? '지난주' : '이번 주'}엔 아직 집중 기록이 없어!`, sub: '"집중 시작"이라고 하면 바로 시작해 🍅' };
+      const top = rr.byGoal[0];
+      return {
+        text: `${r.last ? '지난주' : '이번 주'} ${studylog.hm(rr.total)} 집중했어 📊${card.compare ? ` (${card.compare})` : ''}`,
+        sub: `${top ? `제일 많이: ${top.name} ${studylog.hm(top.min)} · ` : ''}자세한 건 캐릭터 말풍선에 띄웠어`,
+      };
+    }
+    case 'meal':
+      react('nod');
+      return mealAnswer(r);
+    case 'timetable':
+      react('nod');
+      return timetableAnswer(r);
     case 'brief':
       await showBrief();
       return { text: '브리핑을 캐릭터 말풍선에 띄웠어! ☀️' };
@@ -1748,12 +2115,13 @@ async function answer(input) {
         sub: [
           '• 지금 몇 시야 / 오늘 며칠이야',
           '• 오늘 할 일 알려줘',
-          '• 집중 시작 / 50분 집중 / 집중 시간 45분으로 바꿔줘',
+          '• 집중 시작 / 50분 집중 / 집중 시간 45분으로 바꿔줘 / 이번 주 공부 얼마나 했어',
           '• 10분 타이머 / 타이머 그만',
           '• 30분 뒤에 빨래 알려줘 / 내일 아침 7시에 깨워줘',
           '• 알람 뭐 있어 / 알람 다 꺼',
           '• 카톡 열어줘 / 크롬 켜 / 유튜브 틀어줘',
           '• 날씨 어때 / 내일 날씨 / 우산 필요해? / 브리핑 해줘',
+          '• 오늘 점심 뭐야 / 내일 급식 / 시간표 / 다음 수업 뭐야',
           '• 수학 숙제 추가해줘 / 내일 영어 단어 할 일 추가',
           '• 블랙홀이 뭐야 / 세종대왕 누구야 (위키백과)',
           '• 이 화면 봐줘 / 이 문제 풀어줘 / 이 오류 뭐야 / 화면 번역해줘 (AI 연결 필요)',
@@ -1813,7 +2181,47 @@ ipcMain.on('ai:set', (_e, patch) => {
   saveConfig({ ai: next });
   pushSettings();
 });
+// 화면에서 찾은 할 일을 체크메이트에 넣기 (사용자가 고른 것만)
+// 마감일이 있으면 그날 할 일로 넣고, 하루 전 저녁 8시에 미리 알림 (마감이 오늘이면 시각 1시간 전, 없으면 알림 없음)
+ipcMain.handle('ask:add-todos', async (_e, items) => {
+  if (!Array.isArray(items) || !items.length) return { ok: false, message: '넣을 할 일이 없어.' };
+  if (!(await checkmate.currentUser().catch(() => null))) return { ok: false, message: '체크메이트에 로그인해야 넣을 수 있어. 설정 → 체크메이트' };
+  const todayKey = checkmate.dateKey();
+  const added = [];
+  const failed = [];
+  for (const raw of items.slice(0, 12)) {
+    const title = clip(raw && raw.title, 100);
+    if (!title) continue;
+    const due = raw.due && /^\d{4}-\d{2}-\d{2}$/.test(raw.due) && raw.due >= todayKey ? raw.due : todayKey;
+    let remindAt = null;
+    const [y, mo, d] = due.split('-').map(Number);
+    if (due > todayKey) remindAt = new Date(y, mo - 1, d - 1, 20, 0);
+    else if (raw.time && /^\d{2}:\d{2}$/.test(raw.time)) {
+      const [h, mi] = raw.time.split(':').map(Number);
+      const at = new Date(y, mo - 1, d, h - 1, mi);
+      if (at > new Date()) remindAt = at;
+    }
+    try {
+      const row = await checkmate.addTodo(title, { date: due, remindAt });
+      added.push({ title: row.title, date: row.date, remind: remindAt ? whenText(remindAt.getTime()) : null });
+    } catch (e) {
+      failed.push(`${title}: ${e.message}`);
+    }
+  }
+  await refresh();
+  if (added.length) {
+    react('happy');
+    say({ title: `할 일 ${added.length}개 넣었어 📌`, sub: added.map((a) => a.title).slice(0, 3).join(', '), tone: 'happy', icon: '📌' }, 8);
+  }
+  return {
+    ok: added.length > 0,
+    added,
+    message: added.length ? `체크메이트에 ${added.length}개 넣었어 ✅${failed.length ? ` (못 넣은 것 ${failed.length}개)` : ''}` : failed[0] || '못 넣었어',
+  };
+});
+
 ipcMain.on('ai:key-page', (_e, provider) => {
+  if (provider === 'neis') return shell.openExternal('https://open.neis.go.kr/portal/mainPage.do'); // 나이스 인증키 신청
   const P = ai.PROVIDERS[provider];
   if (P) shell.openExternal(P.keyUrl);
 });
@@ -1931,6 +2339,96 @@ async function perfReport(wait) {
   }
   // 잠든 상태
   await measure('sleeping (new)', 'window.__perfSleep && window.__perfSleep(); true');
+}
+
+// 집중 기록 시험: 가짜 할 일·가짜 기록으로 (임시 설정에서만)
+async function studySelfTest(wait) {
+  const shotDir = process.env.AI_SELFTEST_SHOT;
+  const savedToday = today;
+  const savedLog = loadConfig().focusLog;
+  const js = (c) => win.webContents.executeJavaScript(c);
+  // 1) 집중 시작 → 할 일 고르기 버튼
+  today = { date: checkmate.dateKey(), events: [], dDays: [], goals: [{ id: 'g1', name: '수학' }], todos: [{ id: 't1', title: '수학 문제집 3쪽', done: false, goal: '수학' }, { id: 't2', title: '영어 단어 50개', done: false, goal: '영어' }] };
+  saveConfig({ focusLog: [] });
+  startTimer('focus', 25 * 60);
+  await wait(700);
+  const btns = await js("[...document.querySelectorAll('.s-act')].map((b) => b.textContent)");
+  await js("document.querySelector('.s-act').click(); true");
+  await wait(500);
+  console.log('SELFTEST study pick buttons:', JSON.stringify(btns), '| chosen todo:', timer && timer.todo && timer.todo.title);
+  // 2) 끝까지 → 기록 + "끝냈어?" 버튼
+  timer.startedAt = Date.now() - 25 * 60000;
+  timer.endsAt = Date.now() - 1;
+  tickTimer();
+  await wait(700);
+  const endBtns = await js("[...document.querySelectorAll('.s-act')].map((b) => b.textContent)");
+  const log1 = loadConfig().focusLog || [];
+  console.log('SELFTEST study end card:', JSON.stringify(endBtns), '| log', JSON.stringify(log1.map((e) => [e.min, e.todo, e.goal, e.full])));
+  stopTimer(false); // 쉬는 시간 끄기
+  // 3) 중간에 멈추면 한 만큼만
+  startTimer('focus', 50 * 60, { todo: { id: 't2', title: '영어 단어 50개', goal: '영어' } });
+  timer.startedAt = Date.now() - 12 * 60000;
+  stopTimer(false);
+  startTimer('focus', 25 * 60);
+  timer.startedAt = Date.now() - 60000; // 1분만: 안 남겨야 한다
+  stopTimer(false);
+  const log2 = loadConfig().focusLog || [];
+  console.log('SELFTEST study partial:', JSON.stringify(log2.map((e) => [e.min, e.goal, e.full])));
+  // 4) 지난주 기록도 조금 넣고 리포트
+  const lw = Date.now() - 7 * 86400000;
+  saveConfig({ focusLog: [...log2, { at: lw, min: 20, todo: null, goal: '국어', dz: 1, full: true }] });
+  const a = await answer('이번 주 공부 얼마나 했어');
+  await wait(800);
+  const rp = await js("({ title: (document.querySelector('.rp-title') || {}).textContent, total: (document.querySelector('.rp-total b') || {}).textContent, cmp: (document.querySelector('.rp-cmp') || {}).textContent, bars: document.querySelectorAll('.rp-col').length, goals: [...document.querySelectorAll('.rp-goal-name')].map((x) => x.textContent) })");
+  console.log('SELFTEST study report answer:', a.text, '|', a.sub);
+  console.log('SELFTEST study report card:', JSON.stringify(rp));
+  if (shotDir) fs.writeFileSync(path.join(shotDir, 'selftest-report.png'), (await win.webContents.capturePage()).toPNG());
+  const empty = await answer('지난주 집중 얼마나 했어');
+  console.log('SELFTEST study last week:', empty.text);
+  const card = await briefCard();
+  console.log('SELFTEST study brief row:', JSON.stringify(card.study));
+  const gt = await bridgeTool('get_today', {}, 'selftest');
+  console.log('SELFTEST study in get_today:', JSON.stringify(gt.study_this_week));
+  // 되돌리기
+  today = savedToday;
+  saveConfig({ focusLog: savedLog || [] });
+  await js("document.querySelector('.b-close') && document.querySelector('.b-close').click(); true");
+  await wait(500);
+}
+
+// 학교 시험: 공개된 학교(서울 가락고 1학년 1반)로 진짜 나이스를 불러 본다 (임시 설정에서만)
+async function schoolSelfTest(wait) {
+  const before = loadConfig().school;
+  saveConfig({ school: {} });
+  console.log('SELFTEST school none:', (await answer('오늘 점심 뭐야')).text);
+  const found = await school.search('가락고등학교');
+  const g = found.find((x) => x.name === '가락고등학교');
+  saveConfig({ school: { school: g, grade: 1, cls: 1, start: '08:40', classMin: 50, mealBrief: true, classAlert: true } });
+  const q = async (t) => {
+    const r = await answer(t);
+    return (r.text || '').split('\n').join(' / ').slice(0, 140);
+  };
+  console.log('SELFTEST school meal:', await q('오늘 급식 뭐야'));
+  console.log('SELFTEST school lunch tomorrow:', await q('내일 점심 뭐야'));
+  console.log('SELFTEST school timetable:', await q('시간표 알려줘'));
+  console.log('SELFTEST school 3rd period:', await q('3교시 뭐야'));
+  console.log('SELFTEST school next class:', await q('다음 수업 뭐야'));
+  const card = await briefCard();
+  console.log('SELFTEST school brief:', JSON.stringify(card.school));
+  const st = await bridgeTool('get_today', {}, 'selftest');
+  console.log('SELFTEST school in get_today:', JSON.stringify(st.school).slice(0, 200));
+  // 설정 창에 학교 카드
+  for (let i = 0; i < 3 && (!settingsWin || settingsWin.isDestroyed()); i++) {
+    toggleSettings();
+    await wait(1200);
+  }
+  const ui = await settingsWin.webContents.executeJavaScript(
+    "({ name: document.getElementById('schoolName').textContent, grades: document.querySelectorAll('#schoolGrade button').length, on: (document.querySelector('#schoolGrade .on') || {}).textContent, cls: document.getElementById('schoolCls').value, alert: document.getElementById('schoolAlert').checked, hidden: document.getElementById('schoolSection').classList.contains('off') })",
+  );
+  console.log('SELFTEST school settings card:', JSON.stringify(ui));
+  closeSettings();
+  saveConfig({ school: before || {} });
+  await wait(700);
 }
 
 // 다른 AI 앱 연결 시험: Claude 앱이 하듯이 MCP 서버를 따로 띄워서 JSON-RPC 로 도구를 불러 본다.
@@ -2082,6 +2580,18 @@ function selfTest() {
     // AI_PERFTEST=1 : 가만히 둘 때 CPU·초당 그림 수, 창 여는 시간만 재고 끝낸다
     if (process.env.AI_PERFTEST) {
       await perfReport(wait);
+      app.quit();
+      return;
+    }
+    // AI_STUDYTEST=1 : 집중 기록·주간 리포트만 시험하고 끝낸다
+    if (process.env.AI_STUDYTEST) {
+      await studySelfTest(wait).catch((e) => console.log('SELFTEST study crashed:', e.stack));
+      app.quit();
+      return;
+    }
+    // AI_SCHOOLTEST=1 : 학교(급식·시간표)만 시험하고 끝낸다
+    if (process.env.AI_SCHOOLTEST) {
+      await schoolSelfTest(wait).catch((e) => console.log('SELFTEST school crashed:', e.stack));
       app.quit();
       return;
     }
@@ -2554,6 +3064,8 @@ function selfTest() {
     closeAsk();
 
     await mcpSelfTest(wait).catch((e) => console.log('SELFTEST mcp crashed:', e.stack));
+    await schoolSelfTest(wait).catch((e) => console.log('SELFTEST school crashed:', e.stack));
+    await studySelfTest(wait).catch((e) => console.log('SELFTEST study crashed:', e.stack));
 
     // 크기 바꾸기 (끝나면 원래대로)
     const oldSize = sizeScale();
@@ -2760,6 +3272,7 @@ if (!app.requestSingleInstanceLock()) {
       win.webContents.send('cursor', { x: p.x - b.x, y: p.y - b.y });
     }, 33);
     setInterval(checkReminders, CHECK_MS);
+    setInterval(tickSchool, CHECK_MS);
     setInterval(() => refresh(), REFRESH_MS);
     setInterval(tickTimer, 1000);
     checkMissedAlarms();

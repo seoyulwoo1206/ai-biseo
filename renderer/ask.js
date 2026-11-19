@@ -120,6 +120,57 @@ function richText(text) {
   return box;
 }
 
+// 📌 화면에서 찾은 할 일: 고르고 → 체크메이트에 넣기
+function todoPicker(items) {
+  const box = el('div', 'b-todos');
+  const pad = (n) => String(n).padStart(2, '0');
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  const dueText = (it) => {
+    if (!it.due) return '날짜 없음 → 오늘 할 일로';
+    const d = new Date(it.due + 'T00:00:00');
+    const days = Math.round((d - new Date(todayKey + 'T00:00:00')) / 86400000);
+    const when = `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]})${it.time ? ' ' + it.time : ''}`;
+    if (days < 0) return `${when} · 이미 지났어 → 오늘로`;
+    return `${when} 마감 · ${days === 0 ? '오늘!' : days === 1 ? '내일' : `D-${days}`}`;
+  };
+  const checks = items.map((it) => {
+    const row = el('label', 'b-todo');
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    const tx = el('div', 'b-todo-text');
+    tx.append(el('div', 'b-todo-title', it.title), el('div', 'b-todo-meta', dueText(it) + (it.note ? ` · ${it.note}` : '')));
+    row.append(cb, tx);
+    box.append(row);
+    return cb;
+  });
+  if (!api.addTodos) return box;
+  const btn = el('button', 'b-todo-add');
+  const msg = el('div', 'b-todo-msg');
+  const count = () => checks.filter((c) => c.checked).length;
+  const paint = () => {
+    btn.textContent = `📌 체크메이트에 넣기 (${count()})`;
+    btn.disabled = !count();
+  };
+  checks.forEach((c) => c.addEventListener('change', paint));
+  paint();
+  btn.addEventListener('click', async () => {
+    const picked = items.filter((_, i) => checks[i].checked);
+    btn.disabled = true;
+    btn.textContent = '넣는 중…';
+    const r = await api.addTodos(picked);
+    msg.textContent = r.message + (r.added && r.added.some((a) => a.remind) ? ' · 마감 하루 전 저녁 8시에 알려줄게' : '');
+    msg.className = 'b-todo-msg ' + (r.ok ? 'ok' : 'err');
+    if (r.ok) {
+      btn.textContent = '넣었어 ✅';
+      checks.forEach((c) => (c.disabled = true));
+    } else paint();
+  });
+  box.append(btn, msg);
+  return box;
+}
+
 function addBot(ans) {
   const m = el('div', 'msg bot');
   m.append(el('div', 'avatar', '🐾'));
@@ -130,6 +181,7 @@ function addBot(ans) {
     b.append(t);
   } else {
     b.append(richText(ans.text));
+    if (Array.isArray(ans.todos) && ans.todos.length) b.append(todoPicker(ans.todos));
     if (ans.sub) b.append(el('div', ans.ai ? 'b-sub b-ai' : 'b-sub', ans.sub));
     if (ans.buttons && ans.buttons.length) {
       const row = el('div', 'b-btns');
