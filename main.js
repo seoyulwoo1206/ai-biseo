@@ -19,6 +19,8 @@ const bridge = require('./lib/bridge');
 const connect = require('./lib/connect');
 const school = require('./lib/school');
 const studylog = require('./lib/studylog');
+const remote = require('./lib/remote');
+const REMOTE_URL = 'https://ai-biseo-mocha.vercel.app/mcp';
 
 // 자동 테스트(AI_SELFTEST)는 진짜 설정·키·레벨을 절대 건드리지 않게 임시 폴더를 쓴다.
 // 폴더가 다르면 '하나만 켜기' 잠금도 따로라서, 켜져 있는 진짜 비서를 끄지 않고도 시험할 수 있다.
@@ -559,10 +561,12 @@ ipcMain.handle('login', async (_e, { email, password }) => {
   await refresh();
   pushSettings();
   say(summary({ title: '로그인 완료! 🎉', tone: 'happy' }), 14);
+  startRemote();
   return { ok: true };
 });
 
 async function logout() {
+  await remote.stop();
   await checkmate.signOut();
   today = null;
   pushSettings();
@@ -1081,13 +1085,50 @@ function startBridge() {
 }
 
 function connectState() {
+  const r = { remote: remote.status().state, remoteError: remote.status().error, remoteOn: loadConfig().remote !== false, remoteUrl: REMOTE_URL };
   try {
     const s = connect.status(__dirname);
-    return { claude: s.state, claudeInstalled: s.installed };
+    return { ...r, claude: s.state, claudeInstalled: s.installed };
   } catch (e) {
-    return { claude: 'error', claudeInstalled: true, error: e.message };
+    return { ...r, claude: 'error', claudeInstalled: true, error: e.message };
   }
 }
+
+// ======================================================================
+// 원격 연결: ChatGPT·Claude 웹/폰 → Vercel 서버 → 실시간 채널 → 여기 (lib/remote.js)
+// ======================================================================
+function remoteHandle(name, args, client) {
+  if (name === 'refresh') return refresh().then(() => ({ refreshed: true }));
+  return bridgeTool(name, args, client);
+}
+
+function startRemote() {
+  if (process.env.AI_SELFTEST) return; // 자동 테스트는 따로 시험한다
+  if (loadConfig().remote === false) return remote.stop();
+  remote.start({ handle: remoteHandle, onChange: (st) => (log(`원격 연결 ${st.state}${st.error ? ' ' + st.error : ''}`), pushSettings()) }).catch((e) => log('원격 연결 실패', e.message));
+}
+
+ipcMain.handle('remote:set', async (_e, on) => {
+  saveConfig({ remote: !!on });
+  if (on) startRemote();
+  else await remote.stop();
+  pushSettings();
+  return { ok: true };
+});
+
+ipcMain.on('remote:copy', () => {
+  require('electron').clipboard.writeText(REMOTE_URL);
+});
+
+ipcMain.handle('remote:reset', async () => {
+  try {
+    await remote.resetChannel();
+    startRemote();
+    return { ok: true, message: '새 채널로 바꿨어. 예전 연결은 이제 PC에 부탁할 수 없어' };
+  } catch (e) {
+    return { ok: false, message: e.message };
+  }
+});
 
 ipcMain.handle('connect:claude', (_e, action) => {
   try {
@@ -2341,6 +2382,34 @@ async function perfReport(wait) {
   await measure('sleeping (new)', 'window.__perfSleep && window.__perfSleep(); true');
 }
 
+// 원격 연결 시험 (PC 쪽): 로그인 없이 무작위 채널을 듣게 하고, 원격 서버와 같은 코드(mobile/www/api/_lib.js)로 부탁해 본다
+async function remoteSelfTest(wait) {
+  const libPath = path.join(__dirname, 'mobile', 'www', 'api', '_lib.js');
+  if (!fs.existsSync(libPath)) return console.log('SELFTEST remote: skipped (run node mobile/build.mjs first)');
+  const L = require(libPath);
+  const channel = require('crypto').randomBytes(16).toString('hex');
+  const states = [];
+  await remote.start({ handle: remoteHandle, channel, onChange: (st) => states.push(st.state) });
+  for (let i = 0; i < 50 && remote.status().state !== 'on'; i++) await wait(100);
+  console.log('SELFTEST remote listening:', remote.status().state, '| states', states.join('>'));
+  const msg = await L.askPc(channel, 'show_message', { title: '원격 시험이야', detail: '폰에서 보냈어' }, 'ChatGPT');
+  await wait(500);
+  const bubble = await win.webContents.executeJavaScript("(document.querySelector('#bubble') || document.body).innerText.slice(0, 200)");
+  console.log('SELFTEST remote show_message:', JSON.stringify(msg), '| bubble', /원격 시험이야/.test(bubble), '| names app', /ChatGPT/.test(bubble));
+  const f = await L.askPc(channel, 'start_focus', { minutes: 20 }, 'ChatGPT');
+  console.log('SELFTEST remote start_focus:', JSON.stringify(f), '| timer', JSON.stringify(timerState()));
+  const g = await L.askPc(channel, 'get_today', {}, 'ChatGPT');
+  console.log('SELFTEST remote get_today:', g.ok, '| has timer', !!(g.result && g.result.timer), '| keys', Object.keys(g.result || {}).length);
+  const st = await L.askPc(channel, 'stop_timer', {}, 'ChatGPT');
+  const bad = await L.askPc(channel, 'add_todo', { title: 'x' }, 'ChatGPT');
+  console.log('SELFTEST remote stop + not allowed:', JSON.stringify(st.result), '|', JSON.stringify(bad));
+  const wrong = await L.askPc('0'.repeat(32), 'show_message', { title: 'x' }, 'evil', 2500);
+  console.log('SELFTEST remote wrong channel:', JSON.stringify(wrong));
+  await remote.stop();
+  const off = await L.askPc(channel, 'show_message', { title: 'x' }, 'ChatGPT', 2500);
+  console.log('SELFTEST remote after stop:', JSON.stringify(off), '| state', remote.status().state);
+}
+
 // 집중 기록 시험: 가짜 할 일·가짜 기록으로 (임시 설정에서만)
 async function studySelfTest(wait) {
   const shotDir = process.env.AI_SELFTEST_SHOT;
@@ -2580,6 +2649,12 @@ function selfTest() {
     // AI_PERFTEST=1 : 가만히 둘 때 CPU·초당 그림 수, 창 여는 시간만 재고 끝낸다
     if (process.env.AI_PERFTEST) {
       await perfReport(wait);
+      app.quit();
+      return;
+    }
+    // AI_REMOTETEST=1 : 원격 연결(PC 쪽)만 시험하고 끝낸다
+    if (process.env.AI_REMOTETEST) {
+      await remoteSelfTest(wait).catch((e) => console.log('SELFTEST remote crashed:', e.stack));
       app.quit();
       return;
     }
@@ -3066,6 +3141,7 @@ function selfTest() {
     await mcpSelfTest(wait).catch((e) => console.log('SELFTEST mcp crashed:', e.stack));
     await schoolSelfTest(wait).catch((e) => console.log('SELFTEST school crashed:', e.stack));
     await studySelfTest(wait).catch((e) => console.log('SELFTEST study crashed:', e.stack));
+    await remoteSelfTest(wait).catch((e) => console.log('SELFTEST remote crashed:', e.stack));
 
     // 크기 바꾸기 (끝나면 원래대로)
     const oldSize = sizeScale();
@@ -3287,12 +3363,14 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.register('Control+Shift+Space', toggleAsk);
     setTimeout(checkSavedKeys, 6000);
     startBridge(); // 다른 AI 앱(Claude 등) 연결 다리
+    setTimeout(startRemote, 3000); // ChatGPT·폰에서 오는 원격 부탁 듣기
     refillPanelSoon('settings', 4000); // 설정·물어보기 창 미리 준비
     refillPanelSoon('ask', 5000);
   });
   app.on('before-quit', () => (appQuitting = true));
   app.on('will-quit', () => {
     if (bridgeServer) bridgeServer.close();
+    remote.stop(true);
     globalShortcut.unregisterAll();
     voice.stop();
     winwatch.stop();

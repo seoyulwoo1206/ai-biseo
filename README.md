@@ -99,6 +99,10 @@ npm start
   - Claude 앱 대화에서 비서를 도구로 써요: 오늘 일정·할 일 읽기, 체크메이트 할 일 추가·완료·내일로·이름 바꾸기·지우기, 집중·타이머 켜고 끄기, 알림·알람 맞추고 지우기, 캐릭터 말풍선 띄우기.
   - 다른 AI 가 한 일은 캐릭터 말풍선에 "○○에서 부탁했어"로 떠요. 비서가 켜져 있어야 해요.
   - 안전: 이 컴퓨터 안(127.0.0.1)에서만, 켤 때마다 바뀌는 비밀 토큰이 있어야만 열리고, 웹페이지에서 오는 요청은 막아요. Claude 설정 파일은 ai-biseo 한 줄만 넣고 빼며 .bak 을 남겨요.
+- **🌐 ChatGPT·Claude 웹/폰에서 부르기 (원격)**: 설정 → 다른 AI 앱과 연결 → "ChatGPT·폰에서 부르기" 켜기 → 주소 `https://ai-biseo-mocha.vercel.app/mcp` 를 ChatGPT·Claude 의 커스텀 커넥터에 넣고 체크메이트 계정으로 로그인.
+  - 할 일 보기·넣기·완료는 PC 가 꺼져 있어도 돼요(체크메이트에 바로). 집중·타이머·알림·말풍선은 PC 비서가 켜져 있을 때.
+  - 구조: Vercel 함수(`mobile/server/api`: OAuth 로그인 + MCP) → 체크메이트 Supabase 실시간 채널 → PC(`lib/remote.js`). 채널 이름은 무작위로 만들어 체크메이트 계정 정보(user_metadata)에만 적어 둬요. 체크메이트 표는 하나도 안 바꿔요.
+  - 서버 비밀값은 Vercel 환경 변수 `AIBISEO_SECRET` (로그인 토큰을 암호화). "원격 연결 끊고 새로 만들기"를 누르면 채널이 바뀌어 예전 연결은 PC 에 부탁할 수 없어요.
   - Claude Code 에서도 쓰려면: `claude mcp add ai-biseo -- node "<이 폴더>/mcp/aibiseo-mcp.js"`
 - **캐릭터 키우기**: 할 일 하나 끝 +10 XP (체크메이트 앱에서 끝내도 쳐 줘요), 집중 한 번 끝 +20, 하루 첫 출석 +5.
   레벨이 오르면 꾸미기 아이템이 생겨요: 🎀 리본(Lv.2) · 🌸 꽃핀(3) · 👓 안경(4) · 👑 왕관(5) · ⭐ 별 머리핀(6) · 🧣 목도리(7) · 😇 천사 링(8).
@@ -144,6 +148,8 @@ lib/screen.js      화면 찍기(전체·창·영역), AI 크기 맞추기, 확�
 renderer/snip.*    ✂️ 영역 고르기 화면 (마우스·터치, 확인 버튼)
 lib/school.js      학교 찾기·급식·시간표 (나이스 공개 API)
 lib/studylog.js    집중 기록·주간 리포트 계산
+lib/remote.js      원격 부탁 받기 (체크메이트 실시간 채널)
+mobile/server/api  원격 서버: OAuth 로그인(oauth.js) + MCP(mcp.js) (Vercel 함수)
 lib/bridge.js      다른 AI 앱 연결 다리 (127.0.0.1 + 비밀 토큰)
 lib/connect.js     Claude 데스크톱 설정에 비서 연결 넣기·빼기
 mcp/aibiseo-mcp.js MCP 서버 (Claude 앱이 실행, 외부 패키지 없음)

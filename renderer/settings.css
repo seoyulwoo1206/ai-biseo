@@ -754,3 +754,56 @@ footer {
   color: var(--faint);
   font-size: 10.5px;
 }
+
+/* 원격 연결 (ChatGPT·폰) */
+.remote-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.remote-box.off {
+  display: none;
+}
+
+.remote-url {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.remote-url code {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--chip);
+  font-family: Consolas, 'Malgun Gothic', monospace;
+  font-size: 11px;
+  color: #3f55d0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.remote-box .link {
+  align-self: flex-start;
+  padding-left: 0;
+}
+
+#remoteState.ok {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+#remoteState.bad {
+  color: var(--bad);
+}
+
+/* 연결 상태는 이름 아래 작은 줄로 */
+#linkState,
+#remoteState {
+  display: block;
+  margin: 2px 0 0;
+}

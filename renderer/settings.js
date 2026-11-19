@@ -336,13 +336,21 @@ function renderLink(c) {
   }
   linkState = c.claude;
   const text = {
-    connected: '· 연결됨 ✅',
-    outdated: '· 다시 연결 필요',
-    none: c.claudeInstalled ? '· 안 됨' : '· 앱이 안 보여요',
-    error: '· 설정 파일 확인 필요',
+    connected: '연결됨 ✅',
+    outdated: '다시 연결 필요',
+    none: c.claudeInstalled ? '아직 안 함' : 'Claude 앱이 안 보여요',
+    error: '설정 파일 확인 필요',
   }[c.claude];
   $('linkState').textContent = text || '';
   $('linkState').classList.toggle('ok', c.claude === 'connected');
+  // 원격 (ChatGPT·폰)
+  const rText = { on: '켜짐 ✅', connecting: '연결 중…', login: '체크메이트 로그인 필요', error: '연결 오류', off: '꺼짐' }[c.remote] || '';
+  $('remoteState').textContent = c.remoteOn ? rText : '꺼짐';
+  $('remoteState').className = 'hint' + (c.remoteOn && c.remote === 'on' ? ' ok' : c.remoteOn && (c.remote === 'error' || c.remote === 'login') ? ' bad' : '');
+  $('remoteState').title = c.remoteError || '';
+  $('remoteOn').checked = !!c.remoteOn;
+  $('remoteBox').classList.toggle('off', !c.remoteOn);
+  $('remoteUrl').textContent = c.remoteUrl || '';
   $('linkClaude').textContent = c.claude === 'connected' ? '연결 빼기' : c.claude === 'outdated' ? '다시 연결' : '연결하기';
 }
 $('linkClaude').addEventListener('click', async () => {
@@ -454,4 +462,16 @@ $('neisForm').addEventListener('submit', async (e) => {
     $('neisKey').value = '';
     $('neisForm').classList.add('off');
   }
+});
+
+$('remoteOn').addEventListener('change', (e) => api.settings.remoteSet(e.target.checked));
+$('remoteCopy').addEventListener('click', () => {
+  api.settings.remoteCopy();
+  $('remoteCopy').textContent = '복사됨 ✓';
+  setTimeout(() => ($('remoteCopy').textContent = '복사'), 1500);
+});
+$('remoteReset').addEventListener('click', async () => {
+  const r = await api.settings.remoteReset();
+  $('linkMsg').textContent = r.message;
+  $('linkMsg').className = 'ai-msg ' + (r.ok ? 'ok' : 'err');
 });

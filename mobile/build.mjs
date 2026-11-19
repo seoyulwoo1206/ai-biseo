@@ -96,11 +96,32 @@ fs.writeFileSync(
   ),
 );
 
+// 원격 연결 서버 (Vercel 함수): mobile/server/api → www/api, 체크메이트 공개 주소·키는 _sb.json 으로
+fs.rmSync(path.join(OUT, 'api'), { recursive: true, force: true });
+fs.cpSync(R('mobile', 'server', 'api'), path.join(OUT, 'api'), { recursive: true });
+{
+  const cm = JSON.parse(fs.readFileSync(R('checkmate.config.json'), 'utf8'));
+  fs.writeFileSync(path.join(OUT, 'api', '_sb.json'), JSON.stringify({ url: cm.url, key: cm.key }));
+}
+fs.writeFileSync(path.join(OUT, 'package.json'), JSON.stringify({ private: true, engines: { node: '22.x' } }, null, 2));
+
 // 아이폰 웹앱을 Vercel 에 올릴 때: 오프라인 파일(sw.js)은 늘 새로 받게
 fs.writeFileSync(
   path.join(OUT, 'vercel.json'),
   JSON.stringify(
     {
+      rewrites: [
+        { source: '/.well-known/oauth-protected-resource/:path*', destination: '/api/oauth?step=meta-pr' },
+        { source: '/.well-known/oauth-protected-resource', destination: '/api/oauth?step=meta-pr' },
+        { source: '/.well-known/oauth-authorization-server/:path*', destination: '/api/oauth?step=meta-as' },
+        { source: '/.well-known/oauth-authorization-server', destination: '/api/oauth?step=meta-as' },
+        { source: '/.well-known/openid-configuration', destination: '/api/oauth?step=meta-as' },
+        { source: '/register', destination: '/api/oauth?step=register' },
+        { source: '/authorize', destination: '/api/oauth?step=authorize' },
+        { source: '/token', destination: '/api/oauth?step=token' },
+        { source: '/mcp', destination: '/api/mcp' },
+      ],
+      functions: { 'api/*.js': { maxDuration: 15 } },
       headers: [
         { source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
         { source: '/(.*)', headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }] },
@@ -111,7 +132,7 @@ fs.writeFileSync(
   ),
 );
 
-const skip = new Set(['sw.js', 'overlay.html', 'overlay-host.js', 'vercel.json']);
+const skip = new Set(['sw.js', 'overlay.html', 'overlay-host.js', 'vercel.json', 'api', 'package.json']);
 const files = fs.readdirSync(OUT).filter((f) => !skip.has(f) && !f.startsWith('.'));
 const sw = fs
   .readFileSync(R('mobile', 'web', 'sw.js'), 'utf8')
@@ -122,7 +143,11 @@ fs.writeFileSync(path.join(OUT, 'sw.js'), sw);
 // 안드로이드 앱이 있으면 같은 파일을 앱 안에도 넣는다
 if (fs.existsSync(R('mobile', 'android'))) {
   fs.rmSync(ANDROID_ASSETS, { recursive: true, force: true });
-  fs.cpSync(OUT, ANDROID_ASSETS, { recursive: true, filter: (src) => !/[\\/]\.vercel([\\/]|$)|vercel\.json$/.test(src) });
+  // 서버 파일(api, package.json)은 앱 안에 넣지 않는다
+  fs.cpSync(OUT, ANDROID_ASSETS, {
+    recursive: true,
+    filter: (src) => !/[\\/]\.vercel([\\/]|$)|vercel\.json$|[\\/]www[\\/]api([\\/]|$)|[\\/]www[\\/]package\.json$/.test(src),
+  });
 }
 
 const kb = (f) => Math.round(fs.statSync(path.join(OUT, f)).size / 1024);

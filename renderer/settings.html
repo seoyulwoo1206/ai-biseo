@@ -162,13 +162,24 @@
       </section>
 
       <section id="linkSection">
-        <h2>다른 AI 앱과 연결</h2>
+        <h2>다른 AI 앱과 연결 <small class="hint">그 AI 가 나한테 일을 시켜요</small></h2>
         <div class="card">
           <div class="row between">
-            <span>🔌 Claude 앱 <small id="linkState" class="hint"></small></span>
+            <span>🔌 Claude 앱 (이 PC) <small id="linkState" class="hint"></small></span>
             <button id="linkClaude" class="ghost small">연결하기</button>
           </div>
-          <div class="hint link-help">Claude 앱에서 할 일 넣기·집중·알림을 나한테 부탁할 수 있어요. 연결한 뒤 Claude 앱을 껐다 켜 주세요.</div>
+          <label class="row between switch-row line">
+            <span>🌐 ChatGPT·폰에서 부르기 <small id="remoteState" class="hint"></small></span>
+            <input id="remoteOn" type="checkbox" class="switch" />
+          </label>
+          <div id="remoteBox" class="remote-box">
+            <div class="remote-url">
+              <code id="remoteUrl"></code>
+              <button id="remoteCopy" type="button" class="ghost small">복사</button>
+            </div>
+            <div class="hint link-help">ChatGPT나 Claude(웹·폰)의 <b>커스텀 커넥터</b>에 이 주소를 넣고 체크메이트 계정으로 로그인하면 돼요. 할 일은 PC가 꺼져 있어도, 집중·알림·말풍선은 PC 비서가 켜져 있을 때 돼요.</div>
+            <button id="remoteReset" type="button" class="link muted">원격 연결 끊고 새로 만들기</button>
+          </div>
           <div id="linkMsg" class="ai-msg"></div>
         </div>
       </section>
