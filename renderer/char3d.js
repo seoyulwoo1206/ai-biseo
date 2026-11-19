@@ -671,7 +671,8 @@ const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2);
 export function createCharacter3D(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: true });
   renderer.setClearColor(0x000000, 0);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // 고해상도 화면에서 2배로 그리면 GPU 가 바빠져 컴퓨터 전체가 버벅인다 → 1.5배까지만 (차이는 거의 안 보임)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 0.98;
 
@@ -861,11 +862,26 @@ export function createCharacter3D(canvas) {
     m.sad.visible = mouth === 'sad';
   }
 
+  // 그리는 횟수 조절: 움직일 때만 초당 60번, 가만히 숨 쉴 때 30번, 잘 때 15번.
+  // (예전엔 화면 주사율(120Hz 등) 그대로 계속 그려서 GPU·CPU 를 많이 썼다)
+  let lastDraw = 0;
+  function targetFps(t) {
+    if (held || Object.keys(acts).length) return 60;
+    const lx = sleeping ? 0 : look.tx; // 잘 때는 고개가 가운데로 돌아간다
+    const ly = sleeping ? 0 : look.ty;
+    if (Math.abs(lx - look.x) + Math.abs(ly - look.y) > 0.004) return 60;
+    if (blinkStart >= 0 || t < blushUntil) return 60;
+    return sleeping ? 15 : 30;
+  }
+
   function tick() {
     requestAnimationFrame(tick);
-    if (!current) return;
+    if (!current || document.hidden) return;
     const t = now();
-    const dt = Math.min(t - last, 0.05);
+    if (!window.__noFpsCap && t - lastDraw < 1 / targetFps(t) - 0.004) return;
+    lastDraw = t;
+    window.__draws = (window.__draws || 0) + 1; // 속도 재기용 (그린 횟수)
+    const dt = Math.min(t - last, 0.1);
     last = t;
 
     let sy = 1 + (sleeping ? 0.045 * Math.sin(t * 1.3) : 0.025 * Math.sin(t * 2.2));

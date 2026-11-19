@@ -21,6 +21,12 @@ const connect = require('./lib/connect');
 // 자동 테스트(AI_SELFTEST)는 진짜 설정·키·레벨을 절대 건드리지 않게 임시 폴더를 쓴다.
 // 폴더가 다르면 '하나만 켜기' 잠금도 따로라서, 켜져 있는 진짜 비서를 끄지 않고도 시험할 수 있다.
 if (process.env.AI_SELFTEST) app.setPath('userData', path.join(os.tmpdir(), 'ai-assistant-selftest'));
+// 속도 재기: 시험 화면이 '가려진 창'으로 여겨져 그리기를 멈추지 않게
+if (process.env.AI_PERFTEST) {
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-background-timer-throttling');
+}
 
 const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
@@ -612,11 +618,41 @@ function toggleSettings() {
   x = Math.min(Math.max(x, area.x), area.x + area.width - SET_W);
   const y = Math.min(Math.max(b.y + b.height - SET_H, area.y), area.y + area.height - SET_H);
 
-  settingsWin = new BrowserWindow({
-    width: SET_W,
-    height: SET_H,
-    x,
-    y,
+  const w = (settingsWin = takePanel('settings'));
+  w.setBounds({ x, y, width: SET_W, height: SET_H });
+  // 다른 곳을 누르면 닫힌다.
+  w.on('blur', closeSettings);
+  w.on('closed', () => {
+    if (settingsWin === w) settingsWin = null;
+    settingsClosedAt = Date.now();
+    refillPanelSoon('settings');
+  });
+  whenPanelLoaded(w, async () => {
+    if (w.isDestroyed()) return;
+    // 미리 만들어 둔 창이면 지금 상태로 다시 그리고 처음 화면(맨 위)으로
+    w.webContents.send('settings:update', await settingsState());
+    w.webContents.send('panel:reveal');
+    if (!w.isDestroyed() && settingsWin === w) w.show();
+  });
+}
+
+// ======================================================================
+// 창 미리 만들어 두기: 설정·물어보기 창을 숨긴 채 하나씩 준비해 두면 누르자마자 뜬다.
+// (예전엔 누를 때마다 새로 만들어서 0.3초쯤 걸렸고, 그동안 캐릭터가 버벅였다)
+// ======================================================================
+const PANELS = {
+  settings: { file: 'settings.html', size: () => [SET_W, SET_H], level: 'screen-saver' },
+  ask: { file: 'ask.html', size: () => [ASK_W, ASK_H], level: 'floating' },
+};
+const spare = { settings: null, ask: null };
+let appQuitting = false;
+
+function makePanel(kind) {
+  const p = PANELS[kind];
+  const [width, height] = p.size();
+  const w = new BrowserWindow({
+    width,
+    height,
     frame: false,
     transparent: true,
     resizable: false,
@@ -629,15 +665,30 @@ function toggleSettings() {
     icon: ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
-  settingsWin.setAlwaysOnTop(true, 'screen-saver');
-  settingsWin.loadFile(path.join(__dirname, 'renderer', 'settings.html'));
-  settingsWin.once('ready-to-show', () => settingsWin.show());
-  // 다른 곳을 누르면 닫힌다.
-  settingsWin.on('blur', closeSettings);
-  settingsWin.on('closed', () => {
-    settingsWin = null;
-    settingsClosedAt = Date.now();
-  });
+  w.setAlwaysOnTop(true, p.level);
+  w.loadFile(path.join(__dirname, 'renderer', p.file));
+  return w;
+}
+
+// 준비된 창을 꺼내 쓰고(없으면 새로 만들고), 다 쓰면 다음 창을 미리 만든다
+function takePanel(kind) {
+  let w = spare[kind];
+  spare[kind] = null;
+  if (!w || w.isDestroyed()) w = makePanel(kind);
+  return w;
+}
+
+function refillPanelSoon(kind, ms = 900) {
+  setTimeout(() => {
+    if (appQuitting || (spare[kind] && !spare[kind].isDestroyed())) return;
+    spare[kind] = makePanel(kind);
+  }, ms);
+}
+
+// 다 읽힌 뒤에 fn (미리 만든 창이면 바로)
+function whenPanelLoaded(w, fn) {
+  if (w.webContents.isLoading()) w.webContents.once('did-finish-load', fn);
+  else fn();
 }
 
 ipcMain.handle('settings:get', () => settingsState());
@@ -1175,28 +1226,14 @@ function openAsk() {
   x = Math.min(Math.max(x, area.x), area.x + area.width - ASK_W);
   const h = Math.min(ASK_H, area.height - 16);
   const y = Math.min(Math.max(b.y + b.height - h, area.y), area.y + area.height - h);
-  askWin = new BrowserWindow({
-    width: ASK_W,
-    height: h,
-    x,
-    y,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    hasShadow: false,
-    show: false,
-    icon: ICON,
-    webPreferences: { preload: path.join(__dirname, 'preload.js') },
-  });
-  askWin.setAlwaysOnTop(true, 'floating');
-  askWin.loadFile(path.join(__dirname, 'renderer', 'ask.html'));
-  askWin.once('ready-to-show', () => {
-    askWin.show();
-    askWin.focus();
+  const w = (askWin = takePanel('ask'));
+  w.setBounds({ x, y, width: ASK_W, height: h });
+  whenPanelLoaded(w, () => {
+    if (w.isDestroyed() || askWin !== w) return;
+    w.webContents.send('panel:reveal');
+    w.show();
+    w.focus();
+    w.webContents.send('ask:focus');
   });
   if (process.env.AI_SELFTEST) {
     askWin.on('close', () => console.log('ASKWIN close', new Error().stack.split(/\n/).slice(1, 6).join(' | ')));
@@ -1204,7 +1241,8 @@ function openAsk() {
     askWin.webContents.on('console-message', (e) => { const m = e.message || ''; if (/error/i.test(m)) console.log('ASKWIN console', m); });
   }
   askWin.on('closed', () => {
-    askWin = null;
+    if (askWin === w) askWin = null;
+    refillPanelSoon('ask');
     askClosedAt = Date.now();
     askHistory.length = 0;
     lastShot = null; // 창을 닫으면 찍은 화면도 잊는다
@@ -1219,7 +1257,7 @@ function askScreenFromMenu(req = {}) {
     run();
   } else {
     openAsk();
-    askWin.once('ready-to-show', () => setTimeout(run, 200));
+    whenPanelLoaded(askWin, () => setTimeout(run, 200));
   }
 }
 
@@ -1824,6 +1862,77 @@ function createWindow() {
 }
 
 // 개발용: AI_SELFTEST=1 로 켜면 캐릭터를 눌러 보고 설정 창이 열리는지 확인한 뒤 종료한다.
+// 속도 재기: 프로세스별 CPU(가만히 있을 때·커서 움직일 때), 캐릭터 화면 초당 그림 수, 창 여는 시간
+async function perfReport(wait) {
+  const cpu = () => {
+    const by = {};
+    for (const m of app.getAppMetrics()) by[m.type] = Math.round(((by[m.type] || 0) + m.cpu.percentCPUUsage) * 10) / 10;
+    return by;
+  };
+  const fps = () =>
+    Promise.race([
+      win.webContents.executeJavaScript('new Promise((r) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 2000) requestAnimationFrame(f); else r(Math.round(n / 2)); }; requestAnimationFrame(f); })'),
+      wait(4000).then(() => 'rAF stopped'),
+    ]);
+  const draws = async (ms) => {
+    const a = await win.webContents.executeJavaScript('window.__draws || 0');
+    await wait(ms);
+    const b = await win.webContents.executeJavaScript('window.__draws || 0');
+    return Math.round(((b - a) * 1000) / ms);
+  };
+  const measure = async (label, setup) => {
+    await win.webContents.executeJavaScript(setup);
+    await wait(1500);
+    cpu();
+    const d = await draws(6000);
+    console.log(`PERF ${label}: draws/s ${d} | cpu %`, JSON.stringify(cpu()));
+  };
+  await wait(4000);
+  await measure('idle, no cap (old)', 'window.__noFpsCap = true; true');
+  await measure('idle, capped (new)', 'window.__noFpsCap = false; true');
+  // 커서가 움직이는 동안
+  const moveFor = async (ms) => {
+    const t0 = Date.now();
+    let i = 0;
+    while (Date.now() - t0 < ms) {
+      win.webContents.send('cursor', { x: 60 + (i % 40) * 4, y: 80 + Math.sin(i / 5) * 40 });
+      i++;
+      await wait(30);
+    }
+  };
+  cpu();
+  const mv = draws(4000);
+  await moveFor(4000);
+  console.log('PERF moving cursor (new): draws/s', await mv, '| cpu %', JSON.stringify(cpu()));
+  // 창 여는 시간 (누른 순간 → 화면에 보일 때까지)
+  const untilVisible = async (get) => {
+    for (let i = 0; i < 250; i++) {
+      const w = get();
+      if (w && !w.isDestroyed() && w.isVisible()) return;
+      await wait(20);
+    }
+  };
+  await wait(4000); // 미리 만들어 두기를 기다린다
+  for (let i = 0; i < 3; i++) {
+    const t0 = Date.now();
+    toggleSettings();
+    await untilVisible(() => settingsWin);
+    console.log(`PERF settings open #${i + 1}: ${Date.now() - t0}ms`);
+    closeSettings();
+    await wait(2500);
+  }
+  for (let i = 0; i < 2; i++) {
+    const t0 = Date.now();
+    openAsk();
+    await untilVisible(() => askWin);
+    console.log(`PERF ask open #${i + 1}: ${Date.now() - t0}ms`);
+    closeAsk();
+    await wait(2500);
+  }
+  // 잠든 상태
+  await measure('sleeping (new)', 'window.__perfSleep && window.__perfSleep(); true');
+}
+
 // 다른 AI 앱 연결 시험: Claude 앱이 하듯이 MCP 서버를 따로 띄워서 JSON-RPC 로 도구를 불러 본다.
 // (임시 userData 라서 진짜 설정·알림은 안 건드린다. Claude 설정 파일도 임시 폴더에서만 고쳐 본다.)
 async function mcpSelfTest(wait) {
@@ -1970,6 +2079,12 @@ function selfTest() {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   (async () => {
     await wait(2500);
+    // AI_PERFTEST=1 : 가만히 둘 때 CPU·초당 그림 수, 창 여는 시간만 재고 끝낸다
+    if (process.env.AI_PERFTEST) {
+      await perfReport(wait);
+      app.quit();
+      return;
+    }
     // AI_MCPTEST=1 : 다른 AI 앱 연결(MCP)만 시험하고 끝낸다
     if (process.env.AI_MCPTEST) {
       await mcpSelfTest(wait).catch((e) => console.log('SELFTEST mcp crashed:', e.stack));
@@ -2659,7 +2774,10 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.register('Control+Shift+Space', toggleAsk);
     setTimeout(checkSavedKeys, 6000);
     startBridge(); // 다른 AI 앱(Claude 등) 연결 다리
+    refillPanelSoon('settings', 4000); // 설정·물어보기 창 미리 준비
+    refillPanelSoon('ask', 5000);
   });
+  app.on('before-quit', () => (appQuitting = true));
   app.on('will-quit', () => {
     if (bridgeServer) bridgeServer.close();
     globalShortcut.unregisterAll();

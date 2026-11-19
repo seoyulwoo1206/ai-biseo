@@ -263,6 +263,8 @@ function setSleeping(v) {
   }
 }
 
+window.__perfSleep = () => setSleeping(true); // 속도 재기(AI_PERFTEST)용
+
 function activity() {
   lastActive = performance.now();
   if (sleeping) setSleeping(false);

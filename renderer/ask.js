@@ -315,4 +315,13 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') api.close();
 });
 api.onFocus(() => input.focus());
+// 미리 만들어 둔 창이 보일 때: 여는 애니메이션을 다시
+if (api.onReveal)
+  api.onReveal(() => {
+    const p = document.querySelector('.panel');
+    if (!p) return;
+    p.classList.remove('reveal');
+    void p.offsetWidth;
+    p.classList.add('reveal');
+  });
 window.addEventListener('load', () => input.focus());

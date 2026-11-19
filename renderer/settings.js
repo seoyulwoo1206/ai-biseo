@@ -143,12 +143,25 @@ function render(s) {
     ['stretch', '🙆 스트레칭', '50분마다'],
     ['eyes', '👀 눈 쉬기', '20분마다'],
   ];
+  // 건강 알림: 한 줄에 하나씩 켜기/끄기 스위치
   $('health').replaceChildren(
-    ...HEALTH.map(([key, label, every]) => {
-      const on = !!(s.health && s.health[key]);
-      const b = chip(label, on, () => api.settings.setHealth(key, !on), null);
-      b.title = `${every} 알려줘요 (누르면 ${on ? '끄기' : '켜기'})`;
-      return b;
+    ...HEALTH.map(([key, label, every], i) => {
+      const row = document.createElement('label');
+      row.className = 'row between switch-row' + (i ? ' line' : '');
+      const text = document.createElement('span');
+      text.textContent = label;
+      const hint = document.createElement('small');
+      hint.className = 'hint';
+      hint.textContent = every;
+      text.append(' ', hint);
+      const sw = document.createElement('input');
+      sw.type = 'checkbox';
+      sw.className = 'switch';
+      sw.dataset.key = key;
+      sw.checked = !!(s.health && s.health[key]);
+      sw.addEventListener('change', () => api.settings.setHealth(key, sw.checked));
+      row.append(text, sw);
+      return row;
     }),
   );
 
@@ -297,6 +310,20 @@ window.addEventListener('keydown', (e) => {
 api.settings.onUpdate(render);
 api.settings.get().then(render);
 
+// 미리 만들어 둔 창이 보일 때: 맨 위부터, 지난번 안내 글은 지우고, 여는 애니메이션 다시
+if (api.settings.onReveal)
+  api.settings.onReveal(() => {
+    const p = document.querySelector('.panel');
+    p.scrollTop = 0;
+    for (const id of ['aiMsg', 'linkMsg']) $(id).textContent = '';
+    $('placeResults').replaceChildren();
+    $('placeInput').value = '';
+    $('aiKey').value = '';
+    p.classList.remove('reveal');
+    void p.offsetWidth;
+    p.classList.add('reveal');
+  });
+
 // ---------- 다른 AI 앱 연결 (Claude 데스크톱) ----------
 let linkState = null;
 function renderLink(c) {
@@ -313,6 +340,7 @@ function renderLink(c) {
     error: '· 설정 파일 확인 필요',
   }[c.claude];
   $('linkState').textContent = text || '';
+  $('linkState').classList.toggle('ok', c.claude === 'connected');
   $('linkClaude').textContent = c.claude === 'connected' ? '연결 빼기' : c.claude === 'outdated' ? '다시 연결' : '연결하기';
 }
 $('linkClaude').addEventListener('click', async () => {
