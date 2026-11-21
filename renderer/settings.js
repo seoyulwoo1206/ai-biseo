@@ -178,18 +178,32 @@ function renderGrowth(g, current) {
   $('lvBar').style.width = `${Math.round((g.cur / g.need) * 100)}%`;
   $('lvXp').textContent = `${g.cur} / ${g.need}`;
   const isImage = current && !current.startsWith('3d:');
-  const none = chip('없음', !g.accessory, () => api.settings.setAccessory(null), null);
+  // 아이템 칸: 위에 그림, 아래에 이름 (이름이 길어도 칸 밖으로 안 나가게)
+  const tile = (icon, label, on, onClick) => {
+    const b = document.createElement('button');
+    b.className = 'chip item' + (on ? ' on' : '');
+    const i = document.createElement('span');
+    i.className = 'item-icon';
+    i.textContent = icon;
+    const n = document.createElement('span');
+    n.className = 'name';
+    n.textContent = label;
+    b.append(i, n);
+    b.title = label;
+    b.addEventListener('click', onClick);
+    return b;
+  };
   $('items').replaceChildren(
-    none,
+    tile('✕', '없음', !g.accessory, () => api.settings.setAccessory(null)),
     ...g.items.map((it) => {
       if (!it.unlocked) {
-        const b = chip(`🔒 Lv.${it.level}`, false, () => {}, null);
+        const b = tile('🔒', `Lv.${it.level}`, false, () => {});
         b.classList.add('locked');
         b.title = `Lv.${it.level}이 되면 ${it.emoji} ${it.name}`;
         return b;
       }
-      const b = chip(`${it.emoji} ${it.name}`, g.accessory === it.id, () => api.settings.setAccessory(it.id), null);
-      if (isImage) b.title = '3D 캐릭터에만 달 수 있어요';
+      const b = tile(it.emoji, it.name, g.accessory === it.id, () => api.settings.setAccessory(it.id));
+      b.title = isImage ? '3D 캐릭터에만 달 수 있어요' : it.name;
       return b;
     }),
   );
