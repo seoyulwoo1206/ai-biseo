@@ -42,7 +42,7 @@ if (synth) synth.getVoices(); // 목록 미리 불러오기
 function speak(text) {
   if (!ttsOn || !text) return;
   // 이모지·기호는 읽지 않게 지운다
-  const clean = text.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}•"]/gu, ' ').trim();
+  const clean = text.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}•"*#]/gu, ' ').trim();
   if (!clean) return;
   if (api.speak) return api.speak(clean);
   if (!synth) return;
@@ -80,7 +80,7 @@ const LIST_LINE = /^(?:[•·\-*]|(\d+)[.)])\s+(.+)$/;
 
 // 문장이 많이 붙은 긴 줄은 두 문장씩 문단으로 나눈다
 function splitLong(line) {
-  if (line.length < 90) return [line];
+  if (line.length < 70) return [line];
   const ss = line.split(/(?<=[.!?])\s+(?=\S)/);
   if (ss.length < 3) return [line];
   const out = [];
@@ -88,10 +88,34 @@ function splitLong(line) {
   return out;
 }
 
+// **굵게** → 형광펜 강조
+function inline(node, s) {
+  const parts = String(s).split(/\*\*(.+?)\*\*/g);
+  parts.forEach((p, i) => {
+    if (!p) return;
+    node.append(i % 2 ? el('b', 'hl', p) : document.createTextNode(p.replace(/\*\*/g, '')));
+  });
+  return node;
+}
+
 function fillItem(li, s) {
-  const t = s.match(/^([^:：]{1,18})[:：]\s+(.+)$/);
-  if (t) li.append(el('b', '', `${t[1]}:`), document.createTextNode(` ${t[2]}`));
-  else li.textContent = s;
+  const t = s.match(/^(?:\*\*)?([^:：*]{1,18})(?:\*\*)?[:：]\s+(.+)$/);
+  if (t) {
+    li.append(el('b', 'term', `${t[1]}`));
+    inline(li, ` ${t[2]}`);
+  } else inline(li, s);
+}
+
+// 소제목 줄: "## 제목", "📌 짧은 제목", "짧은 제목:"
+const EMOJI_HEAD = /^(\p{Extended_Pictographic}️?)\s*(.{1,22})$/u;
+function heading(line) {
+  let m = line.match(/^#{1,6}\s+(.+)$/);
+  if (m) return m[1].replace(/\*\*/g, '');
+  m = line.match(EMOJI_HEAD);
+  if (m && !/=/.test(m[2]) && !/[.!?…~다요야어지네까]$/.test(m[2].replace(/\*\*/g, '').trim())) return line.replace(/\*\*/g, '');
+  m = line.match(/^(?:\*\*)?([^:：.!?]{1,18})(?:\*\*)?[:：]$/);
+  if (m) return m[1];
+  return null;
 }
 
 function richText(text) {
@@ -101,11 +125,18 @@ function richText(text) {
     for (const raw of block.split('\n')) {
       const line = raw.trim();
       if (!line) continue;
+      const h = heading(line);
+      if (h) {
+        list = null;
+        box.append(el('div', 'b-h', h));
+        continue;
+      }
       const m = line.match(LIST_LINE);
       if (m) {
         const ordered = !!m[1];
         if (!list || (list.tagName === 'OL') !== ordered) {
           list = el(ordered ? 'ol' : 'ul', 'b-list');
+          if (ordered && Number(m[1]) > 1) list.style.counterReset = `n ${Number(m[1]) - 1}`;
           box.append(list);
         }
         const li = el('li');
@@ -114,9 +145,12 @@ function richText(text) {
         continue;
       }
       list = null;
-      for (const chunk of splitLong(line)) box.append(el('p', 'b-p', chunk));
+      for (const chunk of splitLong(line)) box.append(inline(el('p', 'b-p'), chunk));
     }
   }
+  // 첫 문단이 짧은 한 줄 답이고 뒤에 더 있으면 "한 줄 답"으로 돋보이게
+  const first = box.firstElementChild;
+  if (first && first.tagName === 'P' && box.children.length > 1 && first.textContent.length <= 80) first.classList.add('b-lead');
   return box;
 }
 
@@ -216,7 +250,12 @@ async function ask(text, { screen = null } = {}) {
   const run = screen ? api.screen({ text, mode: screen.mode, kind: screen.kind }) : api.submit(text);
   const [ans] = await Promise.all([run, new Promise((r) => setTimeout(r, 350))]);
   typing.remove();
-  addBot(ans);
+  const m = addBot(ans);
+  // 긴 대답은 끝이 아니라 처음부터 읽게: 내 질문이 맨 위에 오도록 맞춘다
+  const me = [...log.querySelectorAll('.msg.me')].pop();
+  if (me && m.offsetHeight > log.clientHeight * 0.6) {
+    log.scrollTop += me.getBoundingClientRect().top - log.getBoundingClientRect().top - 10;
+  }
   speak(ans.text);
 }
 
@@ -367,6 +406,34 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') api.close();
 });
 api.onFocus(() => input.focus());
+
+// ⤢ 크게 보기 / ⤡ 작게 보기 (PC 만: 폰은 원래 화면을 꽉 채운다)
+const grow = $('grow');
+function showSize(big) {
+  document.querySelector('.panel').classList.toggle('big', big);
+  grow.textContent = big ? '⤡' : '⤢';
+  grow.title = big ? '작게 보기' : '크게 보기';
+}
+if (api.size) {
+  let big = false;
+  const syncSize = () => api.size().then((r) => showSize((big = !!(r && r.big))));
+  syncSize();
+  grow.addEventListener('click', async () => {
+    // 읽던 자리를 잃지 않게: 크기를 바꾼 뒤 같은 비율 위치로
+    const ratio = log.scrollHeight > log.clientHeight ? log.scrollTop / (log.scrollHeight - log.clientHeight) : 1;
+    const r = await api.size(!big);
+    showSize((big = !!(r && r.big)));
+    requestAnimationFrame(() => (log.scrollTop = ratio * (log.scrollHeight - log.clientHeight)));
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && (e.key === '=' || e.key === '+' || e.key === '-')) {
+      e.preventDefault();
+      if ((e.key === '-') === big) grow.click();
+    }
+  });
+  if (api.onReveal) api.onReveal(syncSize);
+} else grow.remove();
+
 // 미리 만들어 둔 창이 보일 때: 여는 애니메이션을 다시
 if (api.onReveal)
   api.onReveal(() => {

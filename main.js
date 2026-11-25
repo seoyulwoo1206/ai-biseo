@@ -1340,8 +1340,30 @@ function tickHealth() {
 // ======================================================================
 let askWin = null;
 let askClosedAt = 0;
-const ASK_W = 360;
-const ASK_H = 480;
+// 물어보기 창 크기: 보통 / 크게 (머리의 ⤢ 버튼으로 바꾸고, 고른 크기를 기억한다)
+const ASK_SIZES = { normal: [400, 560], big: [600, 820] };
+const ASK_W = ASK_SIZES.normal[0];
+const ASK_H = ASK_SIZES.normal[1];
+const askIsBig = () => loadConfig().askBig === true;
+
+function askSize(area, big = askIsBig()) {
+  const [w, h] = ASK_SIZES[big ? 'big' : 'normal'];
+  return [Math.min(w, area.width - 16), Math.min(h, area.height - 16)];
+}
+
+// 열려 있는 물어보기 창 크기 바꾸기: 오른쪽 아래 모서리는 그대로 두고 왼쪽 위로 늘리거나 줄인다
+function resizeAsk(big) {
+  saveConfig({ askBig: !!big });
+  if (!askWin || askWin.isDestroyed()) return;
+  const b = askWin.getBounds();
+  const area = screen.getDisplayMatching(b).workArea;
+  const [width, height] = askSize(area, !!big);
+  let x = b.x + b.width - width;
+  let y = b.y + b.height - height;
+  x = Math.min(Math.max(x, area.x), area.x + area.width - width);
+  y = Math.min(Math.max(y, area.y), area.y + area.height - height);
+  askWin.setBounds({ x, y, width, height }, false);
+}
 
 function openAsk() {
   if (!askWin || askWin.isDestroyed() || !askWin.isFocused()) rememberForeground();
@@ -1354,13 +1376,13 @@ function openAsk() {
   voice.start(); // 음성 입력 준비를 미리 해 둔다
   const b = win.getBounds();
   const area = screen.getDisplayMatching(b).workArea;
-  let x = b.x - ASK_W + 30;
+  const [aw, h] = askSize(area);
+  let x = b.x - aw + 30;
   if (x < area.x) x = b.x + b.width - 30;
-  x = Math.min(Math.max(x, area.x), area.x + area.width - ASK_W);
-  const h = Math.min(ASK_H, area.height - 16);
+  x = Math.min(Math.max(x, area.x), area.x + area.width - aw);
   const y = Math.min(Math.max(b.y + b.height - h, area.y), area.y + area.height - h);
   const w = (askWin = takePanel('ask'));
-  w.setBounds({ x, y, width: ASK_W, height: h });
+  w.setBounds({ x, y, width: aw, height: h });
   whenPanelLoaded(w, () => {
     if (w.isDestroyed() || askWin !== w) return;
     w.webContents.send('panel:reveal');
@@ -2267,6 +2289,10 @@ ipcMain.on('ai:key-page', (_e, provider) => {
   if (P) shell.openExternal(P.keyUrl);
 });
 ipcMain.on('ask:close', closeAsk);
+ipcMain.handle('ask:size', (_e, big) => {
+  if (typeof big === 'boolean') resizeAsk(big);
+  return { big: askIsBig() };
+});
 
 // ---------- 창 ----------
 function createWindow() {
