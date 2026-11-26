@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('assistant', {
     link: (url) => ipcRenderer.send('ask:link', url),
     close: () => ipcRenderer.send('ask:close'),
     size: (big) => ipcRenderer.invoke('ask:size', big),
+    dragSize: (req) => ipcRenderer.invoke('ask:drag-size', req),
     onFocus: (fn) => ipcRenderer.on('ask:focus', () => fn()),
   },
   snip: {

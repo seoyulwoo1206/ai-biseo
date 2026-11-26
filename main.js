@@ -1344,25 +1344,67 @@ let askClosedAt = 0;
 const ASK_SIZES = { normal: [400, 560], big: [600, 820] };
 const ASK_W = ASK_SIZES.normal[0];
 const ASK_H = ASK_SIZES.normal[1];
-const askIsBig = () => loadConfig().askBig === true;
+const ASK_MIN = [320, 380];
+// 저장된 크기: 가장자리를 끌어서 정한 크기(askSize) > 크게/보통 버튼(askBig)
+function askSaved() {
+  const c = loadConfig();
+  const z = c.askSize;
+  if (Array.isArray(z) && z.length === 2 && z.every((n) => Number.isFinite(n) && n > 0)) return z;
+  return ASK_SIZES[c.askBig === true ? 'big' : 'normal'];
+}
+const askIsBig = () => askSaved()[0] >= 560;
 
-function askSize(area, big = askIsBig()) {
-  const [w, h] = ASK_SIZES[big ? 'big' : 'normal'];
-  return [Math.min(w, area.width - 16), Math.min(h, area.height - 16)];
+function askSize(area, size = askSaved()) {
+  const clamp = (v, lo, hi) => Math.round(Math.min(Math.max(v, lo), hi));
+  return [clamp(size[0], ASK_MIN[0], area.width - 16), clamp(size[1], ASK_MIN[1], area.height - 16)];
 }
 
-// 열려 있는 물어보기 창 크기 바꾸기: 오른쪽 아래 모서리는 그대로 두고 왼쪽 위로 늘리거나 줄인다
+// 열려 있는 물어보기 창 크기 바꾸기 (⤢ 버튼): 오른쪽 아래 모서리는 그대로 두고 왼쪽 위로 늘리거나 줄인다
 function resizeAsk(big) {
-  saveConfig({ askBig: !!big });
+  const preset = ASK_SIZES[big ? 'big' : 'normal'];
+  saveConfig({ askBig: !!big, askSize: preset });
   if (!askWin || askWin.isDestroyed()) return;
   const b = askWin.getBounds();
   const area = screen.getDisplayMatching(b).workArea;
-  const [width, height] = askSize(area, !!big);
+  const [width, height] = askSize(area, preset);
   let x = b.x + b.width - width;
   let y = b.y + b.height - height;
   x = Math.min(Math.max(x, area.x), area.x + area.width - width);
   y = Math.min(Math.max(y, area.y), area.y + area.height - height);
   askWin.setBounds({ x, y, width, height }, false);
+}
+
+// 가장자리·모서리를 끌어서 크기 바꾸기 (투명 창은 윈도우가 직접 크기 조절을 못 해서 화면 쪽 손잡이로 한다)
+let askDrag = null;
+function dragAskSize({ phase, edge, dx = 0, dy = 0 } = {}) {
+  if (!askWin || askWin.isDestroyed()) return null;
+  if (phase === 'start') {
+    const b = askWin.getBounds();
+    askDrag = { b, edge: String(edge || ''), area: screen.getDisplayMatching(b).workArea };
+    return null;
+  }
+  if (!askDrag) return null;
+  const { b, edge: e, area } = askDrag;
+  let { x, y, width, height } = b;
+  const right = b.x + b.width;
+  const bottom = b.y + b.height;
+  if (e.includes('l')) {
+    width = Math.min(Math.max(b.width - dx, ASK_MIN[0]), right - area.x);
+    x = right - width;
+  }
+  if (e.includes('r')) width = Math.min(Math.max(b.width + dx, ASK_MIN[0]), area.x + area.width - b.x);
+  if (e.includes('t')) {
+    height = Math.min(Math.max(b.height - dy, ASK_MIN[1]), bottom - area.y);
+    y = bottom - height;
+  }
+  if (e.includes('b')) height = Math.min(Math.max(b.height + dy, ASK_MIN[1]), area.y + area.height - b.y);
+  const nb = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+  askWin.setBounds(nb, false);
+  if (phase === 'end') {
+    askDrag = null;
+    saveConfig({ askSize: [nb.width, nb.height], askBig: nb.width >= 560 });
+  }
+  return { big: nb.width >= 560 };
 }
 
 function openAsk() {
@@ -2293,6 +2335,7 @@ ipcMain.handle('ask:size', (_e, big) => {
   if (typeof big === 'boolean') resizeAsk(big);
   return { big: askIsBig() };
 });
+ipcMain.handle('ask:drag-size', (_e, req) => dragAskSize(req || {}));
 
 // ---------- 창 ----------
 function createWindow() {
@@ -2408,6 +2451,56 @@ async function perfReport(wait) {
   await measure('sleeping (new)', 'window.__perfSleep && window.__perfSleep(); true');
 }
 
+// 물어보기 창 시험: 대답, 가장자리 끌어서 크기 바꾸기, ⤢ 버튼
+async function askSelfTest(wait, shotDir) {
+  // 물어보기 창 (소리 읽기는 시험 중에 끈다)
+  openAsk();
+  await wait(1800);
+  const ask = askWin.webContents;
+  await ask.executeJavaScript('speechSynthesis.speak = () => {}; true');
+  await ask.executeJavaScript("document.querySelector('#chips button').click()");
+  await wait(1200);
+  await ask.executeJavaScript("document.getElementById('input').value = '12*34는'; document.getElementById('form').requestSubmit()");
+  await wait(1200);
+  await ask.executeJavaScript("document.getElementById('input').value = '광합성이 뭐야'; document.getElementById('form').requestSubmit()");
+  await wait(1200);
+  const msgs = await ask.executeJavaScript("[...document.querySelectorAll('.msg.bot .b-text')].map((e) => e.textContent)");
+  console.log('SELFTEST ask answers:', JSON.stringify(msgs));
+  if (shotDir) fs.writeFileSync(path.join(shotDir, 'selftest-ask.png'), (await ask.capturePage()).toPNG());
+
+  // 물어보기 창 크기: 왼쪽 가장자리를 진짜 마우스처럼 끌기 → 줄어들고 기억, ⤢ 버튼 → 크게, 다시 → 보통
+  {
+    const b0 = askWin.getBounds();
+    // 진짜 마우스처럼 화면 좌표(globalX/Y)와 누른 채 움직이기를 같이 보낸다
+    const mouse = (type, x, y, held) =>
+      ask.sendInputEvent({ type, x, y, globalX: b0.x + x, globalY: b0.y + y, button: 'left', clickCount: 1, modifiers: held ? ['leftButtonDown'] : [] });
+    mouse('mouseMove', 4, 200);
+    mouse('mouseDown', 4, 200);
+    for (let i = 1; i <= 6; i++) {
+      mouse('mouseMove', 4 + i * 10, 200, true);
+      await wait(40);
+    }
+    mouse('mouseUp', 64, 200);
+    await wait(400);
+    const b1 = askWin.getBounds();
+    console.log('SELFTEST ask drag left edge:', b0.width, '->', b1.width, '| right edge kept', b0.x + b0.width === b1.x + b1.width, '| saved', JSON.stringify(loadConfig().askSize));
+    await ask.executeJavaScript("document.getElementById('grow').click(); true");
+    await wait(500);
+    const b2 = askWin.getBounds();
+    const icon2 = await ask.executeJavaScript("document.getElementById('grow').textContent");
+    await ask.executeJavaScript("document.getElementById('grow').click(); true");
+    await wait(500);
+    const b3 = askWin.getBounds();
+    console.log('SELFTEST ask grow button:', `${b2.width}x${b2.height}`, icon2, '-> back', `${b3.width}x${b3.height}`, '| bottom-right kept', b2.x + b2.width === b3.x + b3.width && b2.y + b2.height === b3.y + b3.height);
+    dragAskSize({ phase: 'start', edge: 'tl' });
+    const r = dragAskSize({ phase: 'end', edge: 'tl', dx: -5000, dy: 5000 });
+    const b4 = askWin.getBounds();
+    console.log('SELFTEST ask drag limits:', `${b4.width}x${b4.height}`, '(min height 380, width up to screen)', JSON.stringify(r));
+    resizeAsk(false);
+  }
+  closeAsk();
+}
+
 // 원격 연결 시험 (PC 쪽): 로그인 없이 무작위 채널을 듣게 하고, 원격 서버와 같은 코드(mobile/www/api/_lib.js)로 부탁해 본다
 async function remoteSelfTest(wait) {
   const libPath = path.join(__dirname, 'mobile', 'www', 'api', '_lib.js');
@@ -2431,6 +2524,23 @@ async function remoteSelfTest(wait) {
   console.log('SELFTEST remote stop + not allowed:', JSON.stringify(st.result), '|', JSON.stringify(bad));
   const wrong = await L.askPc('0'.repeat(32), 'show_message', { title: 'x' }, 'evil', 2500);
   console.log('SELFTEST remote wrong channel:', JSON.stringify(wrong));
+  // 연결이 끊겨도(절전·인터넷 끊김) 저절로 다시 붙는지: 실시간 연결을 억지로 끊어 본다
+  {
+    const seen = [];
+    const t0 = Date.now();
+    const sb = checkmate.client();
+    // 인터넷이 갑자기 끊긴 것처럼: 속에 있는 연결만 닫는다 (정상 종료 신호 없이)
+    const conn = sb.realtime.conn;
+    if (conn && conn.close) conn.close(3000, 'test drop');
+    else sb.realtime.disconnect();
+    for (let i = 0; i < 300 && !(seen.includes('error') && remote.status().state === 'on'); i++) {
+      const st = remote.status().state;
+      if (seen[seen.length - 1] !== st) seen.push(st);
+      await wait(100);
+    }
+    const back = await L.askPc(channel, 'show_message', { title: '다시 붙었어' }, 'ChatGPT');
+    console.log('SELFTEST remote reconnect:', seen.join('>'), '→', remote.status().state, `in ${((Date.now() - t0) / 1000).toFixed(1)}s`, '| works', !!back.ok);
+  }
   await remote.stop();
   const off = await L.askPc(channel, 'show_message', { title: 'x' }, 'ChatGPT', 2500);
   console.log('SELFTEST remote after stop:', JSON.stringify(off), '| state', remote.status().state);
@@ -2684,6 +2794,13 @@ function selfTest() {
       app.quit();
       return;
     }
+    // AI_ASKTEST=1 : 물어보기 창만 시험하고 끝낸다
+    if (process.env.AI_ASKTEST) {
+      await wait(5500); // 미리 만들어 두는 창이 준비될 때까지
+      await askSelfTest(wait, process.env.AI_SELFTEST_SHOT).catch((e) => console.log('SELFTEST ask crashed:', e.stack));
+      app.quit();
+      return;
+    }
     // AI_STUDYTEST=1 : 집중 기록·주간 리포트만 시험하고 끝낸다
     if (process.env.AI_STUDYTEST) {
       await studySelfTest(wait).catch((e) => console.log('SELFTEST study crashed:', e.stack));
@@ -2926,21 +3043,7 @@ function selfTest() {
     }
     await shot('selftest-more.png');
 
-    // 물어보기 창 (소리 읽기는 시험 중에 끈다)
-    openAsk();
-    await wait(1800);
-    const ask = askWin.webContents;
-    await ask.executeJavaScript('speechSynthesis.speak = () => {}; true');
-    await ask.executeJavaScript("document.querySelector('#chips button').click()");
-    await wait(1200);
-    await ask.executeJavaScript("document.getElementById('input').value = '12*34는'; document.getElementById('form').requestSubmit()");
-    await wait(1200);
-    await ask.executeJavaScript("document.getElementById('input').value = '광합성이 뭐야'; document.getElementById('form').requestSubmit()");
-    await wait(1200);
-    const msgs = await ask.executeJavaScript("[...document.querySelectorAll('.msg.bot .b-text')].map((e) => e.textContent)");
-    console.log('SELFTEST ask answers:', JSON.stringify(msgs));
-    if (shotDir) fs.writeFileSync(path.join(shotDir, 'selftest-ask.png'), (await ask.capturePage()).toPNG());
-    closeAsk();
+    await askSelfTest(wait, shotDir).catch((e) => console.log('SELFTEST ask crashed:', e.stack));
 
     // 집중 타이머 알약
     startTimer('focus', 25 * 60);
@@ -3138,8 +3241,9 @@ function selfTest() {
     console.log('SELFTEST snip touch: tools', JSON.stringify(await toolsInfo(sc)));
     // 확인 버튼도 손가락으로 누른다
     const okR = await sc.executeJavaScript("(() => { const r = document.getElementById('ok').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()");
-    await touch('touchStart', okR.x, okR.y);
-    await touch('touchEnd', okR.x, okR.y);
+    // 확인을 누르자마자 창이 닫힐 수 있어서, 닫힌 뒤의 손 떼기 실패는 괜찮다
+    await touch('touchStart', okR.x, okR.y).catch(() => {});
+    await touch('touchEnd', okR.x, okR.y).catch(() => {});
     const tRegion = await Promise.race([touchP, wait(3000).then(() => 'timeout')]);
     console.log('SELFTEST snip touch region:', tRegion === 'timeout' ? 'timeout' : tRegion && JSON.stringify(tRegion.native.getSize()), '| expected about', `${Math.round(400 * disp.scaleFactor)}x${Math.round(200 * disp.scaleFactor)}`);
     if (tRegion === 'timeout' && !snipWin.isDestroyed()) snipWin.close();
@@ -3355,7 +3459,10 @@ if (!app.requestSingleInstanceLock()) {
       `gemini=${keys.status('gemini')}`,
     );
     powerMonitor.on('suspend', () => log('절전 들어감'));
-    powerMonitor.on('resume', () => log('절전에서 깸', `claude=${keys.status('claude')}`));
+    powerMonitor.on('resume', () => {
+      log('절전에서 깸', `claude=${keys.status('claude')}`);
+      setTimeout(() => remote.nudge(), 4000); // 인터넷이 다시 붙을 시간을 주고 원격 연결 다시
+    });
     app.on('before-quit', () => log('꺼짐'));
     if (IS_MAC && app.dock) app.dock.setIcon(ICON);
     // 처음 켰을 때는 자동 실행을 켜 두고, 켜 둔 상태면 경로가 바뀌었을 수도 있으니 다시 등록한다.

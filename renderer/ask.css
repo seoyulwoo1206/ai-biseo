@@ -651,3 +651,85 @@ ol.b-list li::before {
 .panel.big .msg.bot .bubble {
   max-width: min(520px, calc(100% - 36px));
 }
+
+/* ---------- 가장자리를 끌어서 크기 바꾸기 ---------- */
+.rz {
+  position: fixed;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.002); /* 완전히 투명하면 마우스가 통과할 수 있어서 */
+  -webkit-app-region: no-drag;
+  touch-action: none;
+}
+
+.rz-l,
+.rz-r {
+  top: 24px;
+  bottom: 24px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.rz-l {
+  left: 0;
+}
+
+.rz-r {
+  right: 0;
+}
+
+.rz-t,
+.rz-b {
+  left: 24px;
+  right: 24px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.rz-t {
+  top: 0;
+}
+
+.rz-b {
+  bottom: 0;
+}
+
+.rz-tl,
+.rz-tr,
+.rz-bl,
+.rz-br {
+  width: 22px;
+  height: 22px;
+}
+
+.rz-tl {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.rz-br {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.rz-tr {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.rz-bl {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+/* 크기를 바꾸는 동안엔 글자가 선택되지 않게 */
+body.resizing {
+  user-select: none;
+}
+
+body.resizing .panel {
+  transition: none;
+}

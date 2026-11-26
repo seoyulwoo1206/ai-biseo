@@ -412,7 +412,7 @@ const grow = $('grow');
 function showSize(big) {
   document.querySelector('.panel').classList.toggle('big', big);
   grow.textContent = big ? '⤡' : '⤢';
-  grow.title = big ? '작게 보기' : '크게 보기';
+  grow.title = (big ? '작게 보기' : '크게 보기') + ' · 가장자리를 끌어서 크기를 맞춰도 돼요';
 }
 if (api.size) {
   let big = false;
@@ -432,6 +432,45 @@ if (api.size) {
     }
   });
   if (api.onReveal) api.onReveal(syncSize);
+
+  // 가장자리·모서리를 끌어서 크기 바꾸기
+  if (api.dragSize) {
+    for (const edge of ['l', 'r', 't', 'b', 'tl', 'tr', 'bl', 'br']) {
+      const h = el('div', `rz rz-${edge}`);
+      h.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        h.setPointerCapture(e.pointerId);
+        const sx = e.screenX;
+        const sy = e.screenY;
+        let last = null;
+        let queued = false;
+        document.body.classList.add('resizing');
+        api.dragSize({ phase: 'start', edge });
+        const move = (ev) => {
+          last = { dx: ev.screenX - sx, dy: ev.screenY - sy };
+          if (queued) return;
+          queued = true;
+          requestAnimationFrame(() => {
+            queued = false;
+            api.dragSize({ phase: 'move', edge, ...last });
+          });
+        };
+        const up = (ev) => {
+          h.removeEventListener('pointermove', move);
+          h.removeEventListener('pointerup', up);
+          h.removeEventListener('pointercancel', up);
+          document.body.classList.remove('resizing');
+          const d = { dx: ev.screenX - sx, dy: ev.screenY - sy };
+          api.dragSize({ phase: 'end', edge, ...d }).then((r) => r && showSize((big = !!r.big)));
+        };
+        h.addEventListener('pointermove', move);
+        h.addEventListener('pointerup', up);
+        h.addEventListener('pointercancel', up);
+      });
+      document.body.append(h);
+    }
+  }
 } else grow.remove();
 
 // 미리 만들어 둔 창이 보일 때: 여는 애니메이션을 다시
