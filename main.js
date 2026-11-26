@@ -2327,7 +2327,7 @@ ipcMain.handle('ask:add-todos', async (_e, items) => {
 });
 
 ipcMain.on('ai:key-page', (_e, provider) => {
-  if (provider === 'neis') return shell.openExternal('https://open.neis.go.kr/portal/mainPage.do'); // 나이스 인증키 신청
+  if (provider === 'neis') return shell.openExternal('https://open.neis.go.kr/portal/guide/actKeyPage.do'); // 나이스 인증키 신청 페이지로 바로
   const P = ai.PROVIDERS[provider];
   if (P) shell.openExternal(P.keyUrl);
 });
