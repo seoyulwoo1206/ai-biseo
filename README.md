@@ -10,6 +10,7 @@
 | 🍎 **아이폰** | 사파리로 https://ai-biseo-mocha.vercel.app → 공유 → **홈 화면에 추가** |
 | 🌐 **설치 없이** | 아무 브라우저로 https://ai-biseo-mocha.vercel.app |
 | 💻 **윈도우 PC** | [Node.js](https://nodejs.org) 설치 → 위쪽 초록 **Code** → **Download ZIP** → 압축 푼 폴더에서 `npm install` → `npm start` |
+| 💻 **맥북** | [Node.js](https://nodejs.org) 설치 → 위쪽 초록 **Code** → **Download ZIP** → 압축 푼 폴더를 오른쪽 클릭 → **폴더에서 새로운 터미널** → `npm install` → `npm start` (아직 진짜 맥에선 안 켜 봤어요) |
 
 설치한 뒤 캐릭터(폰은 ⚙️)를 눌러 **설정 → 로그인** 에서 체크메이트 계정으로 로그인하면 끝!
 
