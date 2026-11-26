@@ -2,6 +2,17 @@
 
 화면 구석에 떠 있는 3D 캐릭터 비서. 체크메이트 일정을 알려 주고, 집중 타이머·건강 알림·물어보기를 해 줘요.
 
+## 📥 설치
+
+| 어디서 | 이렇게 |
+| --- | --- |
+| 📱 **안드로이드** | [릴리스 페이지](https://github.com/seoyulwoo1206/ai-biseo/releases/latest) 맨 아래 **Assets** 에서 `.apk` 받기 → 파일 열어서 설치 ("출처를 알 수 없는 앱" 허용) |
+| 🍎 **아이폰** | 사파리로 https://ai-biseo-mocha.vercel.app → 공유 → **홈 화면에 추가** |
+| 🌐 **설치 없이** | 아무 브라우저로 https://ai-biseo-mocha.vercel.app |
+| 💻 **윈도우 PC** | [Node.js](https://nodejs.org) 설치 → 위쪽 초록 **Code** → **Download ZIP** → 압축 푼 폴더에서 `npm install` → `npm start` |
+
+설치한 뒤 캐릭터(폰은 ⚙️)를 눌러 **설정 → 로그인** 에서 체크메이트 계정으로 로그인하면 끝!
+
 ## 실행
 
 ```bash
