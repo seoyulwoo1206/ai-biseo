@@ -1610,7 +1610,10 @@ async function timetableAnswer({ dayOffset = 0, period = null, next = false }) {
     const b = bell.find((x) => x.period === p);
     return b ? school.hm(b.start) : '';
   };
-  const cut = !neisKey() && !school.fullTimetable() && rows.length >= 5 ? '\n(6·7교시는 지금 못 받아 와서 5교시까지만 보여)' : '';
+  const last = Math.max(...rows.map((r) => r.period));
+  // 과학고처럼 강의실(분반)로 올라오는 학교: 선택 과목은 그 시간에 열리는 수업을 모아서 보여 준다
+  const mixNote = rows.elective ? '\n(선택 과목은 그 시간에 열리는 수업을 모아서 보여 줘)' : '';
+  const cut = !neisKey() && !school.fullTimetable() && !rows.rooms && rows.length >= 5 ? '\n(6·7교시는 지금 못 받아 와서 5교시까지만 보여)' : '';
   if (period) {
     const r = rows.find((x) => x.period === period);
     if (r) return { text: `${day} ${period}교시는 ${r.subject}야 📚`, sub: at(period) ? `${at(period)} 시작` : '' };
@@ -1625,11 +1628,11 @@ async function timetableAnswer({ dayOffset = 0, period = null, next = false }) {
     if (cur && nxt) return { text: `지금은 ${cur.period}교시 ${subj(cur.period)}, 다음은 ${nxt.period}교시 ${subj(nxt.period)}야 📚`, sub: `${school.hm(nxt.start)} 시작` };
     if (nxt) return { text: `다음 수업은 ${nxt.period}교시 ${subj(nxt.period)}야 📚`, sub: `${school.hm(nxt.start)} 시작 · ${nxt.start - now}분 남았어` };
     if (cur) return { text: `지금 ${cur.period}교시 ${subj(cur.period)}가 마지막이야!`, sub: `${school.hm(cur.end)}에 끝나` };
-    return { text: '오늘 수업은 다 끝났어! 🎉', sub: `오늘 ${rows.length}교시까지 있었어` };
+    return { text: '오늘 수업은 다 끝났어! 🎉', sub: `오늘 ${last}교시까지 있었어` };
   }
   return {
-    text: `${day} 시간표 📚 (${rows.length}교시까지)\n` + rows.map((r) => `${r.period}교시 ${r.subject}`).join('\n') + cut,
-    sub: `${c.school.name} ${c.grade}학년 ${c.cls}반`,
+    text: `${day} 시간표 📚 (${last}교시까지)\n` + rows.map((r) => `${r.period}교시 ${r.subject}`).join('\n') + cut + mixNote,
+    sub: `${c.school.name} ${c.grade}학년 ${c.cls}반${rows.rooms ? ' (분반 기준)' : ''}`,
   };
 }
 
@@ -2632,6 +2635,17 @@ async function schoolSelfTest(wait) {
     "({ name: document.getElementById('schoolName').textContent, grades: document.querySelectorAll('#schoolGrade button').length, on: (document.querySelector('#schoolGrade .on') || {}).textContent, cls: document.getElementById('schoolCls').value, alert: document.getElementById('schoolAlert').checked, hidden: document.getElementById('schoolSection').classList.contains('off') })",
   );
   console.log('SELFTEST school settings card:', JSON.stringify(ui));
+  // 반 번호 없이 강의실(분반)로 올라오는 학교 (과학고 모양을 흉내 낸 줄들)
+  const roomRows = [
+    { PERIO: '1', ITRT_CNTNT: '수학Ⅱ', CLRM_NM: ' M301(1)', CLASS_NM: null },
+    { PERIO: '1', ITRT_CNTNT: '국어Ⅱ', CLRM_NM: 'M202(2)', CLASS_NM: null },
+    { PERIO: '2', ITRT_CNTNT: '일반물리학', CLRM_NM: 'M406(1)', CLASS_NM: null },
+    { PERIO: '2', ITRT_CNTNT: '인공지능', CLRM_NM: 'S726(1)', CLASS_NM: null },
+    { PERIO: '5', ITRT_CNTNT: '자율연구Ⅱ1', CLRM_NM: 'AAaa1-1', CLASS_NM: null },
+    { PERIO: '5', ITRT_CNTNT: '자율연구Ⅱ2', CLRM_NM: 'AAaa1-2', CLASS_NM: null },
+  ];
+  const rr = school.fromRooms(roomRows, 1);
+  console.log('SELFTEST school rooms:', rr.map((x) => `${x.period}:${x.subject}`).join(' | '), '| elective', rr.elective, '| expect 1:수학Ⅱ | 2:일반물리학 / 인공지능 | 5:자율연구Ⅱ');
   closeSettings();
   saveConfig({ school: before || {} });
   await wait(700);

@@ -22,6 +22,7 @@ const PARAMS = new Set([
   'SEM',
   'GRADE',
   'CLASS_NM',
+  'pIndex',
 ]);
 const VALUE = /^[0-9A-Za-z가-힣 ._-]{1,40}$/;
 
@@ -43,6 +44,7 @@ module.exports = async (req, res) => {
   for (const [k, v] of u.searchParams) {
     if (k === 'ep') continue;
     if (!PARAMS.has(k) || !VALUE.test(v)) return send(res, 400, { error: `bad param ${k}` });
+    if (k === 'pIndex' && !/^(?:[1-9]|1\d|20)$/.test(v)) return send(res, 400, { error: 'bad pIndex' });
     q.set(k, v);
   }
   if (key) q.set('KEY', key);
