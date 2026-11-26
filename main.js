@@ -1549,6 +1549,7 @@ function schoolState() {
     mealBrief: c.mealBrief !== false,
     classAlert: !!c.classAlert,
     hasKey: keys.status('neis') === 'ok',
+    serverKey: school.fullTimetable(),
   };
 }
 
@@ -1609,7 +1610,7 @@ async function timetableAnswer({ dayOffset = 0, period = null, next = false }) {
     const b = bell.find((x) => x.period === p);
     return b ? school.hm(b.start) : '';
   };
-  const cut = !neisKey() && rows.length >= 5 ? '\n(6·7교시는 설정 → 학교에서 나이스 키를 넣으면 보여)' : '';
+  const cut = !neisKey() && !school.fullTimetable() && rows.length >= 5 ? '\n(6·7교시는 지금 못 받아 와서 5교시까지만 보여)' : '';
   if (period) {
     const r = rows.find((x) => x.period === period);
     if (r) return { text: `${day} ${period}교시는 ${r.subject}야 📚`, sub: at(period) ? `${at(period)} 시작` : '' };
@@ -1648,7 +1649,7 @@ async function schoolToday() {
       const b = bell.find((x) => x.period === r.period);
       return { period: r.period, subject: r.subject, start: b ? school.hm(b.start) : null };
     }),
-    timetable_note: !neisKey() && rows && rows.length >= 5 ? 'Only periods 1-5 are visible without a NEIS key.' : undefined,
+    timetable_note: !neisKey() && !school.fullTimetable() && rows && rows.length >= 5 ? 'Only periods 1-5 could be loaded.' : undefined,
   };
 }
 

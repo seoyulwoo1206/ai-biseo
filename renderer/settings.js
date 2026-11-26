@@ -420,7 +420,10 @@ function renderSchool(sc) {
       return b;
     }),
   );
-  $('neisToggle').textContent = sc.hasKey ? '🔑 나이스 키 넣음 ✓' : '🔑 7교시까지 보기';
+  // 서버에 키가 있으면 따로 안 넣어도 7교시까지 보인다 → 내 키는 원하는 사람만
+  $('neisToggle').textContent = sc.hasKey ? '🔑 내 나이스 키 넣음 ✓' : sc.serverKey ? '✅ 7교시까지 보여요 · 내 키 쓰기' : '🔑 7교시까지 보기';
+  $('neisToggle').classList.toggle('muted', !!sc.serverKey && !sc.hasKey);
+  $('neisPage').style.display = sc.serverKey && !sc.hasKey ? 'none' : '';
 }
 
 $('schoolForm').addEventListener('submit', async (e) => {
