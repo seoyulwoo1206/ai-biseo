@@ -54,7 +54,7 @@ function ring(done, total) {
   return wrap;
 }
 
-function renderToday(card, expanded, onMore, onTodo, onAdd) {
+function renderToday(card, expanded, onMore, onTodo, onAdd, onAction) {
   const root = el('div', 't-card');
 
   // 머리: 제목 + 날짜 + 진행률
@@ -162,6 +162,7 @@ function renderToday(card, expanded, onMore, onTodo, onAdd) {
   }
 
   root.append(body);
+  appendActions(root, card, onAction);
   return root;
 }
 
@@ -363,7 +364,7 @@ export function renderCard(bubble, card, { seconds, expanded = false, onMore, on
   const inner = el('div', 'b-inner');
   inner.append(
     card.kind === 'today'
-      ? renderToday(card, expanded, onMore, onTodo, onAdd)
+      ? renderToday(card, expanded, onMore, onTodo, onAdd, onAction)
       : card.kind === 'brief'
         ? renderBrief(card, onAction)
         : card.kind === 'report'

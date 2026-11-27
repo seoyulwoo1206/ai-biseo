@@ -1918,7 +1918,7 @@ async function briefDetail(what) {
     if (what === 'back') return showBrief();
     if (what === 'today') {
       if (!today) await refresh().catch(() => {});
-      return say(summary(), 25);
+      return say({ ...summary(), actions: [BACK] }, 25);
     }
     if (what === 'study') {
       const card = studyCard(false);

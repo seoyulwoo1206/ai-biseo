@@ -17,6 +17,9 @@
   // PC 전용: 폴더 열기, 딴짓 말리기(창 감지)
   hide($('folder'));
   hide(rowOf($('focusGuard')));
+  // 학교: 내 나이스 키 넣기는 PC 에서만 (폰은 우리 서버 키로 7교시까지)
+  hide($('neisToggle') && $('neisToggle').closest('.links'));
+  hide($('neisForm'));
   var size = $('size');
   if (size && size.previousElementSibling) size.previousElementSibling.textContent = '크기';
 
