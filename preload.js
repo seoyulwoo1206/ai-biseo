@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('assistant', {
   dragBy: (dx, dy) => ipcRenderer.invoke('drag-by', { dx, dy }),
   dragMove: (dx, dy) => ipcRenderer.send('drag-move', { dx, dy }),
   dragEnd: () => ipcRenderer.send('drag-end'),
+  onFling: (fn) => ipcRenderer.on('fling', (_e, f) => fn(f)),
   showMenu: () => ipcRenderer.send('show-menu'),
   clicked: () => ipcRenderer.send('character-clicked'),
   onCharacter: (fn) => ipcRenderer.on('character', (_e, c) => fn(c)),

@@ -2750,6 +2750,65 @@ async function studySelfTest(wait) {
 }
 
 // 학교 시험: 공개된 학교(서울 가락고 1학년 1반)로 진짜 나이스를 불러 본다 (임시 설정에서만)
+// 던지기 시험: 실제로 끌어 놓은 것처럼 위치 기록 → 놓기 → 날아간 거리·튕김·화면 안에 남는지
+async function flingSelfTest(wait) {
+  const events = [];
+  const orig = win.webContents.send.bind(win.webContents);
+  win.webContents.send = (ch, data) => {
+    if (ch === 'fling') events.push(data.type + (data.hard ? '(hard)' : '') + (data.side ? ':' + data.side : ''));
+    return orig(ch, data);
+  };
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const waitEnd = async () => {
+    for (let i = 0; i < 200 && flingTimer; i++) await wait(50);
+  };
+  const charOn = () => {
+    const [x, y] = win.getPosition();
+    const r = charRect || { x: 0, y: 0, width: WIN_W, height: WIN_H };
+    return { left: x + r.x - area.x, right: area.x + area.width - (x + r.x + r.width), top: y + r.y - area.y, bottom: area.y + area.height - (y + r.y + r.height) };
+  };
+  // 끌어서 놓기 흉내: 0.1초 동안 (dx, dy) 만큼 움직이고 바로 놓는다
+  const throwBy = async (sx, sy, dx, dy, ms = 100) => {
+    win.setPosition(Math.round(sx), Math.round(sy));
+    await wait(300);
+    events.length = 0;
+    const t0 = Date.now() - ms;
+    dragTrail = [];
+    for (let i = 0; i <= 10; i++) dragTrail.push({ t: t0 + (ms * i) / 10, x: Math.round(sx + (dx * i) / 10), y: Math.round(sy + (dy * i) / 10) });
+    win.setPosition(Math.round(sx + dx), Math.round(sy + dy));
+    const v = releaseVelocity();
+    const p0 = win.getPosition();
+    const flew = startFling(v.vx, v.vy);
+    await waitEnd();
+    const p1 = win.getPosition();
+    return { speed: Math.round(Math.hypot(v.vx, v.vy)), flew, dist: Math.round(Math.hypot(p1[0] - p0[0], p1[1] - p0[1])), events: [...events], on: charOn() };
+  };
+  console.log('SELFTEST fling charRect:', JSON.stringify(charRect), 'area', JSON.stringify(area));
+  const mid = { x: area.x + area.width / 2 - WIN_W / 2, y: area.y + area.height / 2 - WIN_H / 2 };
+  console.log('SELFTEST fling slow (30px):', JSON.stringify(await throwBy(mid.x, mid.y, 30, 0)));
+  console.log('SELFTEST fling medium (90px):', JSON.stringify(await throwBy(mid.x - 200, mid.y, 90, 0)));
+  console.log('SELFTEST fling fast (200px):', JSON.stringify(await throwBy(mid.x - 400, mid.y, 200, 0)));
+  console.log('SELFTEST fling super fast (600px, capped):', JSON.stringify(await throwBy(mid.x - 400, mid.y, 600, 0)));
+  // 오른쪽 끝 가까이에서 오른쪽으로 세게 → 튕겨서 돌아와야 한다
+  const r = charRect || { x: 0, width: WIN_W };
+  const nearRight = area.x + area.width - (r.x + r.width) - 150;
+  const b = await throwBy(nearRight - 200, mid.y, 200, 0);
+  console.log('SELFTEST fling into right wall:', JSON.stringify(b), '| bounced', b.events.some((e) => e.startsWith('bounce')), '| inside', b.on.right >= 0);
+  // 아래로 세게 (작업 표시줄) → 튕기고 화면 안
+  const c = await throwBy(mid.x, area.y + area.height - WIN_H - 100, 0, 220);
+  console.log('SELFTEST fling into bottom:', JSON.stringify(c), '| inside', c.on.bottom >= 0);
+  // 날아가는 중에 다시 잡으면 멈춘다
+  win.setPosition(Math.round(mid.x - 300), Math.round(mid.y));
+  startFling(2000, 0);
+  await wait(120);
+  ipcMain.emit('drag-start');
+  const stopped = !flingTimer;
+  ipcMain.emit('drag-end');
+  console.log('SELFTEST fling grab mid-air stops:', stopped, '| not flung again (no move):', !flingTimer);
+  win.setPosition(Math.round(mid.x), Math.round(mid.y));
+  win.webContents.send = orig;
+}
+
 // 브리핑 시험: 영재고(경기과학고) 1학년 1반으로 브리핑을 띄우고, 줄을 진짜로 눌러서 자세히 카드가 뜨는지
 async function briefSelfTest(wait, shotDir) {
   const before = loadConfig().school;
@@ -2981,6 +3040,12 @@ function selfTest() {
     // AI_REMOTETEST=1 : 원격 연결(PC 쪽)만 시험하고 끝낸다
     if (process.env.AI_REMOTETEST) {
       await remoteSelfTest(wait).catch((e) => console.log('SELFTEST remote crashed:', e.stack));
+      app.quit();
+      return;
+    }
+    // AI_FLINGTEST=1 : 던지기(날아가기·튕기기)만 시험하고 끝낸다
+    if (process.env.AI_FLINGTEST) {
+      await flingSelfTest(wait).catch((e) => console.log('SELFTEST fling crashed:', e.stack));
       app.quit();
       return;
     }
@@ -3552,7 +3617,10 @@ ipcMain.on('set-shape', (_e, rects) => {
       height: Math.round(r.height),
     }))
     .filter((r) => r.width > 0 && r.height > 0);
-  if (clean.length) applyShape(clean);
+  if (clean.length) {
+    charRect = clean[0];
+    applyShape(clean);
+  }
 });
 
 // 맥에는 setShape 가 없어서: 커서가 캐릭터·말풍선 위에 있을 때만 클릭을 받고,
@@ -3591,14 +3659,105 @@ function moveWindowTo(x, y) {
   win.setBounds({ x, y, width: WIN_W, height: WIN_H });
 }
 
+// ---------- 던지기: 끌다가 휙 놓으면 그 빠르기만큼 날아가고, 화면 가장자리에서 튕긴다 ----------
+// 놓기 직전 0.09초 동안 창이 움직인 빠르기(px/초)로 던진다. 미끄러지다 마찰로 서서히 멈춘다.
+// 날아가는 거리 ≈ 빠르기 ÷ friction → 가장 세게 던져도 500px 남짓 (너무 멀리 안 가게)
+const FLING = { min: 450, max: 2600, scale: 0.85, friction: 4.5, bounce: 0.55, hard: 1300, stop: 40 };
+let charRect = null; // 창 안에서 캐릭터가 있는 곳 (화면이 set-shape 로 알려 준 첫 칸)
+let dragTrail = []; // 끄는 동안의 창 위치 [{ t, x, y }]
+let flingTimer = null;
+
+function trackDrag() {
+  const [x, y] = win.getPosition();
+  const t = Date.now();
+  dragTrail.push({ t, x, y });
+  while (dragTrail.length && t - dragTrail[0].t > 150) dragTrail.shift();
+}
+
+function releaseVelocity(now = Date.now()) {
+  const pts = dragTrail.filter((p) => now - p.t <= 90);
+  if (pts.length < 2) return { vx: 0, vy: 0 };
+  const a = pts[0];
+  const b = pts[pts.length - 1];
+  const dt = (b.t - a.t) / 1000;
+  if (dt < 0.02) return { vx: 0, vy: 0 };
+  return { vx: (b.x - a.x) / dt, vy: (b.y - a.y) / dt };
+}
+
+function stopFling(done) {
+  if (!flingTimer) return;
+  clearInterval(flingTimer);
+  flingTimer = null;
+  if (!done || !win || win.isDestroyed()) return;
+  win.webContents.send('fling', { type: 'end' });
+  saveConfig({ position: win.getPosition() });
+}
+
+// 던지기 시작 (빠르기가 너무 느리면 안 던지고 false)
+function startFling(vx, vy) {
+  stopFling(false);
+  const speed = Math.hypot(vx, vy);
+  if (!win || win.isDestroyed() || speed < FLING.min) return false;
+  const k = Math.min(1, FLING.max / speed) * FLING.scale;
+  vx *= k;
+  vy *= k;
+  let [x, y] = win.getPosition();
+  const area = screen.getDisplayNearestPoint({ x: Math.round(x + WIN_W / 2), y: Math.round(y + WIN_H / 2) }).workArea;
+  const r = charRect || { x: 0, y: 0, width: WIN_W, height: WIN_H };
+  // 캐릭터가 화면 끝에 닿는 창 위치. 처음부터 조금 밖에 있었으면 그 자리까지는 봐준다 (갑자기 튀지 않게)
+  const minX = Math.min(area.x - r.x, x);
+  const maxX = Math.max(area.x + area.width - (r.x + r.width), x);
+  const minY = Math.min(area.y - r.y, y);
+  const maxY = Math.max(area.y + area.height - (r.y + r.height), y);
+  win.webContents.send('fling', { type: 'start', dir: Math.sign(vx) });
+  let last = Date.now();
+  flingTimer = setInterval(() => {
+    if (!win || win.isDestroyed()) return stopFling(false);
+    const now = Date.now();
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    x += vx * dt;
+    y += vy * dt;
+    let hit = 0;
+    if (x < minX && vx < 0) {
+      hit = Math.max(hit, -vx);
+      x = minX;
+      vx = -vx * FLING.bounce;
+    } else if (x > maxX && vx > 0) {
+      hit = Math.max(hit, vx);
+      x = maxX;
+      vx = -vx * FLING.bounce;
+    }
+    if (y < minY && vy < 0) {
+      hit = Math.max(hit, -vy);
+      y = minY;
+      vy = -vy * FLING.bounce;
+    } else if (y > maxY && vy > 0) {
+      hit = Math.max(hit, vy);
+      y = maxY;
+      vy = -vy * FLING.bounce;
+    }
+    const f = Math.exp(-FLING.friction * dt);
+    vx *= f;
+    vy *= f;
+    moveWindowTo(x, y);
+    if (hit) win.webContents.send('fling', { type: 'bounce', hard: hit >= FLING.hard, side: x <= minX ? 'left' : x >= maxX ? 'right' : y <= minY ? 'top' : 'bottom' });
+    if (Math.hypot(vx, vy) < FLING.stop) stopFling(true);
+  }, 16);
+  return true;
+}
+
 ipcMain.on('drag-start', () => {
   if (!win) return;
+  stopFling(false); // 날아가는 중에 다시 잡으면 그 자리에서 멈춘다
+  dragTrail = [];
   dragStart = { win: win.getPosition(), cursor: screen.getCursorScreenPoint() };
   dragByCursor = false;
   clearInterval(dragTimer);
   if (process.env.AI_SELFTEST) return; // 자동 테스트 중엔 실제 커서를 따라가지 않는다
   dragTimer = setInterval(() => {
     if (!dragStart) return;
+    trackDrag();
     const c = screen.getCursorScreenPoint();
     const dx = c.x - dragStart.cursor.x;
     const dy = c.y - dragStart.cursor.y;
@@ -3621,10 +3780,15 @@ ipcMain.handle('drag-by', (_e, { dx, dy }) => {
   return true;
 });
 ipcMain.on('drag-end', () => {
+  const moved = !!dragStart && dragByCursor;
+  if (dragStart && win) trackDrag();
+  const v = releaseVelocity();
   dragStart = null;
   clearInterval(dragTimer);
   dragTimer = null;
+  dragTrail = [];
   if (win) saveConfig({ position: win.getPosition() });
+  if (moved || Math.hypot(v.vx, v.vy) > 0) startFling(v.vx, v.vy);
 });
 ipcMain.on('show-menu', showMenu);
 ipcMain.on('character-clicked', toggleSettings);

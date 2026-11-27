@@ -113,6 +113,7 @@ const react = {
     emote('❗', { cls: 'pop', dx: 26 });
   },
   dizzy() {
+    dizzyAt = performance.now();
     char3d.express('dizzy', 2.4);
     char3d.wobble(2.4);
     emote('💫', { cls: 'pop', dx: 0, size: 26 });
@@ -156,6 +157,27 @@ const react = {
     }
   },
 };
+
+// 던지기 (PC): 휙 놓으면 날아가고, 화면 끝에 부딪히면 튕긴다. 세게 부딪히면 어지러워해.
+let dizzyAt = -1e9;
+const stillDizzy = () => performance.now() - dizzyAt < 2400;
+if (api.onFling) {
+  api.onFling((f) => {
+    if (mode !== '3d') return;
+    if (f.type === 'start') {
+      if (!stillDizzy()) char3d.express('surprise', 0.8);
+      emote('💨', { cls: 'pop', dx: f.dir > 0 ? -30 : 30 });
+    } else if (f.type === 'bounce') {
+      char3d.jolt();
+      char3d.squish();
+      if (f.hard) react.dizzy();
+      else emote('💥', { cls: 'pop', dx: f.side === 'left' ? -26 : f.side === 'right' ? 26 : 0, size: 20 });
+    } else if (f.type === 'end') {
+      if (!stillDizzy()) react.dropped();
+      requestAnimationFrame(updateShape);
+    }
+  });
+}
 
 // 꾹 누르면 하는 애교 (누르고 있으면 계속 이어서)
 const AEGYO = [
