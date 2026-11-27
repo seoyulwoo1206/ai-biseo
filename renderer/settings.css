@@ -880,3 +880,89 @@ footer {
   display: block;
   margin: 2px 0 0;
 }
+
+/* 내 수업 고르기 (영재고·과학고) */
+.mine-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f7f8fc;
+}
+
+.mine-picker.off {
+  display: none;
+}
+
+.mine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.mine-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mine-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #3a3d4d;
+  word-break: keep-all;
+}
+
+.mine-secs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mine-sec {
+  min-width: 26px;
+  padding: 4px 0;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--sub);
+  font-size: 11.5px;
+  box-shadow: inset 0 0 0 1px #e3e5ee;
+}
+
+.mine-sec.on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.mine-picker .row {
+  justify-content: flex-end;
+}
+
+.mine-picker .primary.small {
+  flex: none;
+  padding: 6px 14px;
+}
+
+.school-more > .row.between.mine-line > span:first-child {
+  flex: 1;
+  white-space: normal;
+}
+
+.mine-line .hint {
+  display: block;
+  margin: 2px 0 0;
+}
+
+.mine-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.mine-list::-webkit-scrollbar-thumb {
+  background: #d9dce6;
+  border-radius: 2px;
+}

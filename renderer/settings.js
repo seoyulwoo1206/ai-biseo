@@ -1,5 +1,11 @@
 const api = window.assistant;
 const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+};
 
 const DOT = {
   cat: '#9fd3ff',
@@ -424,6 +430,9 @@ function renderSchool(sc) {
   $('neisToggle').textContent = sc.hasKey ? '🔑 내 나이스 키 넣음 ✓' : sc.serverKey ? '✅ 7교시까지 보여요 · 내 키 쓰기' : '🔑 7교시까지 보기';
   $('neisToggle').classList.toggle('muted', !!sc.serverKey && !sc.hasKey);
   $('neisPage').style.display = sc.serverKey && !sc.hasKey ? 'none' : '';
+  const mineN = (sc.mine || []).length;
+  $('mineState').textContent = mineN ? `${mineN}개 골랐어 · 나머지 시간은 공강` : '영재고·과학고처럼 수업을 골라 듣는 학교';
+  $('mineOpen').textContent = mineN ? '바꾸기' : '고르기';
 }
 
 $('schoolForm').addEventListener('submit', async (e) => {
@@ -479,6 +488,56 @@ $('neisForm').addEventListener('submit', async (e) => {
     $('neisKey').value = '';
     $('neisForm').classList.add('off');
   }
+});
+
+// ---------- 내 수업 고르기 (영재고·과학고: 분반마다 듣는 수업이 달라서 반 시간표가 없다) ----------
+$('mineOpen').addEventListener('click', async () => {
+  const box = $('minePicker');
+  if (!box.classList.contains('off')) return box.classList.add('off');
+  box.classList.remove('off');
+  box.replaceChildren(el('div', 'hint', '이번 주 수업 목록 불러오는 중…'));
+  const r = await api.settings.schoolCourses();
+  if (!r.ok) return box.replaceChildren(el('div', 'ai-msg err', r.message));
+  if (!r.list) return box.replaceChildren(el('div', 'hint', '이 학교는 반 시간표가 있어서 고를 필요 없어 🙂'));
+  if (!r.list.length) return box.replaceChildren(el('div', 'hint', '이번 주 수업이 아직 안 올라왔어'));
+  const picked = new Set(r.mine);
+  const list = el('div', 'mine-list');
+  for (const c of r.list) {
+    const line = el('div', 'mine-row');
+    line.append(el('span', 'mine-name', c.subject));
+    const secs = el('div', 'mine-secs');
+    for (const n of c.sections) {
+      const id = `${c.subject}|${n}`;
+      const b = el('button', 'mine-sec' + (picked.has(id) ? ' on' : ''), String(n));
+      b.type = 'button';
+      b.title = `${c.subject} ${n}분반`;
+      b.addEventListener('click', () => {
+        if (picked.has(id)) picked.delete(id);
+        else picked.add(id);
+        b.classList.toggle('on', picked.has(id));
+      });
+      secs.append(b);
+    }
+    line.append(secs);
+    list.append(line);
+  }
+  const save = el('button', 'primary small', '저장');
+  save.type = 'button';
+  save.addEventListener('click', () => {
+    api.settings.schoolSet({ mine: [...picked] });
+    box.classList.add('off');
+    $('schoolMsg').className = 'ai-msg ok';
+    $('schoolMsg').textContent = picked.size ? '저장했어! 고른 수업만 보여 주고 나머지는 공강으로 둘게' : '다 지웠어. 반 번호로 다시 맞춰 볼게';
+  });
+  const clear = el('button', 'ghost small', '모두 지우기');
+  clear.type = 'button';
+  clear.addEventListener('click', () => {
+    picked.clear();
+    list.querySelectorAll('.mine-sec.on').forEach((b) => b.classList.remove('on'));
+  });
+  const btns = el('div', 'row');
+  btns.append(clear, save);
+  box.replaceChildren(el('div', 'hint', '내가 듣는 과목의 분반 번호를 눌러 줘'), list, btns);
 });
 
 $('remoteOn').addEventListener('change', (e) => api.settings.remoteSet(e.target.checked));

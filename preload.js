@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('assistant', {
     schoolSearch: (name) => ipcRenderer.invoke('school:search', name),
     schoolSet: (patch) => ipcRenderer.send('school:set', patch),
     schoolKey: (key) => ipcRenderer.invoke('school:key', key),
+    schoolCourses: () => ipcRenderer.invoke('school:courses'),
     onReveal: (fn) => ipcRenderer.on('panel:reveal', () => fn()),
     ask: () => ipcRenderer.send('settings:ask'),
     aiSaveKey: (provider, key) => ipcRenderer.invoke('ai:save-key', { provider, key }),

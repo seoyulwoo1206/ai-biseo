@@ -166,8 +166,17 @@ function renderToday(card, expanded, onMore, onTodo, onAdd) {
 }
 
 // 아침 브리핑 카드
-function renderBrief(card) {
+function renderBrief(card, onAction = () => {}) {
   const root = el('div', 'br-card');
+  const tap = (node, id) => {
+    if (!card.tap || !id) return;
+    node.classList.add('tap');
+    node.title = '눌러서 자세히 보기';
+    node.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onAction(`brief:${id}`);
+    });
+  };
   const head = el('div', 'br-head');
   head.append(el('div', 'br-title', card.title), el('div', 'br-date', card.sub || ''));
   root.append(head);
@@ -189,36 +198,40 @@ function renderBrief(card) {
     chips.append(el('span', 'br-chip', `체감 ${w.now.feels}°`));
     box.append(chips);
     box.append(el('div', 'br-advice', w.advice));
+    tap(box, 'weather');
     root.append(box);
   }
 
   const list = el('div', 'br-list');
-  const row = (icon, text, sub) => {
+  const row = (icon, text, sub, action) => {
     const r = el('div', 'br-row');
     r.append(el('span', 'br-row-icon', icon));
     const tx = el('div', 'br-row-text');
     tx.append(el('div', '', text));
     if (sub) tx.append(el('div', 'br-row-sub', sub));
     r.append(tx);
+    if (card.tap && action) r.append(el('span', 'br-row-more', '›'));
+    tap(r, action);
     list.append(r);
   };
   if (card.login) row('🔑', '체크메이트에 로그인하면 일정도 알려줄게');
   else {
     const ev = card.events || [];
-    if (ev.length) row('📅', `오늘 일정 ${ev.length}개`, ev.slice(0, 2).map((e) => `${e.time} ${e.title}`).join(' · '));
-    else row('📅', '오늘은 일정이 없어');
-    row('✅', card.todosTotal ? `할 일 ${card.todosLeft}개 남았어` : '오늘 할 일은 아직 없어', card.todosTotal ? `전체 ${card.todosTotal}개` : '');
+    if (ev.length) row('📅', `오늘 일정 ${ev.length}개`, ev.slice(0, 2).map((e) => `${e.time} ${e.title}`).join(' · '), 'today');
+    else row('📅', '오늘은 일정이 없어', '', 'today');
+    row('✅', card.todosTotal ? `할 일 ${card.todosLeft}개 남았어` : '오늘 할 일은 아직 없어', card.todosTotal ? `전체 ${card.todosTotal}개` : '', 'today');
   }
   if (card.school) {
     const sc = card.school;
-    if (sc.classes) row('📚', `오늘 수업 ${sc.classes.length}교시`, (sc.classesShort || sc.classes).slice(0, 7).join(' · '));
-    if (sc.meal) row('🍚', `${sc.meal.which}: ${sc.meal.dishes.slice(0, 3).join(', ')}`, sc.meal.dishes.slice(3).join(', '));
+    if (sc.classes) row('📚', `오늘 수업 ${sc.last || sc.classes.length}교시${sc.free ? ` · 공강 ${sc.free}` : ''}`, (sc.classesShort || sc.classes).slice(0, 7).join(' · '), 'class');
+    if (sc.meal) row('🍚', `${sc.meal.which}: ${sc.meal.dishes.slice(0, 3).join(', ')}`, sc.meal.dishes.slice(3).join(', '), 'meal');
   }
-  if (card.study) row('⏱️', card.study.text, card.study.sub);
+  if (card.study) row('⏱️', card.study.text, card.study.sub, 'study');
   if (card.alarms && card.alarms.length) {
-    row('⏰', `오늘 알람 ${card.alarms.length}개`, card.alarms.slice(0, 2).map((a) => a.when + (a.what ? ` ${a.what}` : '')).join(' · '));
+    row('⏰', `오늘 알람 ${card.alarms.length}개`, card.alarms.slice(0, 2).map((a) => a.when + (a.what ? ` ${a.what}` : '')).join(' · '), 'alarms');
   }
   root.append(list);
+  if (card.tap) root.append(el('div', 'br-hint', '줄을 누르면 자세히 볼 수 있어'));
 
   if (card.dDays && card.dDays.length) {
     const dd = el('div', 'br-ddays');
@@ -232,8 +245,49 @@ function renderBrief(card) {
   return root;
 }
 
+// 자세히 보기: 머리 + 묶음별 줄(왼쪽 · 가운데 · 오른쪽) + 아래 한 줄 + 버튼
+function renderDetail(card, onAction) {
+  const root = el('div', 'dt-card');
+  const head = el('div', 'dt-head');
+  head.append(el('div', 'dt-icon', card.icon || '📋'));
+  const ht = el('div', 'dt-head-text');
+  ht.append(el('div', 'dt-title', card.title || ''));
+  if (card.sub) ht.append(el('div', 'dt-sub', card.sub));
+  head.append(ht);
+  root.append(head);
+  for (const sec of card.sections || []) {
+    const box = el('div', 'dt-sec');
+    if (sec.title) box.append(el('div', 'dt-sec-title', sec.title));
+    for (const r of sec.rows || []) {
+      const line = el('div', 'dt-row' + (r.now ? ' now' : '') + (r.free ? ' free' : '') + (r.done ? ' done' : '') + (r.warn ? ' warn' : ''));
+      if (r.left != null) line.append(el('span', 'dt-left', r.left));
+      line.append(el('span', 'dt-text', r.text));
+      if (r.right) line.append(el('span', 'dt-right', r.right));
+      box.append(line);
+    }
+    root.append(box);
+  }
+  if (card.foot) root.append(el('div', 'dt-foot', card.foot));
+  appendActions(root, card, onAction);
+  return root;
+}
+
+function appendActions(root, card, onAction) {
+  if (!card.actions || !card.actions.length) return;
+  const row = el('div', 's-actions dt-actions');
+  for (const a of card.actions) {
+    const b = el('button', 's-act', a.label);
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onAction(a.id);
+    });
+    row.append(b);
+  }
+  root.append(row);
+}
+
 // 📊 집중 리포트: 총 시간 + 요일 막대 + 과목(목표)별
-function renderReport(card) {
+function renderReport(card, onAction = () => {}) {
   const root = el('div', 'rp-card');
   const head = el('div', 'rp-head');
   head.append(el('div', 'rp-title', `📊 ${card.title}`));
@@ -273,6 +327,7 @@ function renderReport(card) {
     root.append(list);
   } else root.append(el('div', 'rp-empty', '집중할 때 할 일을 고르면 과목별로 모아 줄게'));
   if (card.foot) root.append(el('div', 'rp-foot', card.foot));
+  appendActions(root, card, onAction);
   return root;
 }
 
@@ -310,10 +365,12 @@ export function renderCard(bubble, card, { seconds, expanded = false, onMore, on
     card.kind === 'today'
       ? renderToday(card, expanded, onMore, onTodo, onAdd)
       : card.kind === 'brief'
-        ? renderBrief(card)
+        ? renderBrief(card, onAction)
         : card.kind === 'report'
-          ? renderReport(card)
-          : renderSimple(card, onAction),
+          ? renderReport(card, onAction)
+          : card.kind === 'detail'
+            ? renderDetail(card, onAction)
+            : renderSimple(card, onAction),
   );
   const timer = el('div', 'b-timer');
   timer.style.animationDuration = `${seconds}s`;
@@ -327,6 +384,6 @@ export function renderCard(bubble, card, { seconds, expanded = false, onMore, on
   });
   bubble.replaceChildren(inner, timer, close);
   bubble.className = `tone-${card.tone || 'info'}`;
-  bubble.classList.toggle('wide', card.kind === 'today' || card.kind === 'brief' || card.kind === 'report');
+  bubble.classList.toggle('wide', card.kind === 'today' || card.kind === 'brief' || card.kind === 'report' || card.kind === 'detail');
   bubble.classList.toggle('expanded', expanded);
 }

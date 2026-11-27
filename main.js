@@ -1149,6 +1149,7 @@ ipcMain.handle('connect:claude', (_e, action) => {
 
 ipcMain.on('card-action', (_e, id) => {
   if (typeof id !== 'string') return;
+  if (id.startsWith('brief:')) return briefDetail(id.slice(6));
   if (id === 'guard:back') react('happy');
   if (id === 'guard:pause') {
     guard.pausedUntil = Date.now() + 5 * 60 * 1000;
@@ -1550,6 +1551,7 @@ function schoolState() {
     classAlert: !!c.classAlert,
     hasKey: keys.status('neis') === 'ok',
     serverKey: school.fullTimetable(),
+    mine: Array.isArray(c.mine) ? c.mine : [],
   };
 }
 
@@ -1585,7 +1587,7 @@ async function mealAnswer({ meal = 'all', dayOffset = 0 }) {
 async function dayTimetable(offset = 0) {
   const c = schoolCfg();
   if (!c.school || !c.grade || !c.cls) return null;
-  return school.timetable(c.school, c.grade, c.cls, dayAfter(offset), neisKey());
+  return school.timetable(c.school, c.grade, c.cls, dayAfter(offset), neisKey(), Array.isArray(c.mine) ? c.mine : null);
 }
 
 function bellOf() {
@@ -1616,12 +1618,13 @@ async function timetableAnswer({ dayOffset = 0, period = null, next = false }) {
   const cut = !neisKey() && !school.fullTimetable() && !rows.rooms && rows.length >= 5 ? '\n(6·7교시는 지금 못 받아 와서 5교시까지만 보여)' : '';
   if (period) {
     const r = rows.find((x) => x.period === period);
+    if (r && r.free) return { text: `${day} ${period}교시는 공강이야 ☕`, sub: at(period) ? `${at(period)}부터 쉬는 시간` : '' };
     if (r) return { text: `${day} ${period}교시는 ${r.subject}야 📚`, sub: at(period) ? `${at(period)} 시작` : '' };
     return { text: `${day} ${period}교시는 없어`, sub: cut.trim() };
   }
   if (next && dayOffset === 0) {
     const now = nowMinutes();
-    const has = (p) => rows.some((r) => r.period === p);
+    const has = (p) => rows.some((r) => r.period === p && !r.free);
     const subj = (p) => rows.find((r) => r.period === p).subject;
     const cur = bell.find((b) => b.start <= now && now < b.end && has(b.period));
     const nxt = bell.find((b) => b.start > now && has(b.period));
@@ -1666,6 +1669,8 @@ async function schoolBrief() {
   return {
     meal: meal ? { which, dishes: meal.dishes.slice(0, 5) } : null,
     classes: rows && rows.length ? rows.map((r) => r.subject) : null,
+    last: rows && rows.length ? Math.max(...rows.map((r) => r.period)) : 0,
+    free: rows ? rows.filter((r) => r.free).length : 0,
     // 같은 과목이 연달아 있으면 한 번만 (블록 수업·시험날)
     classesShort: rows && rows.length ? rows.map((r) => r.subject).filter((x, i, arr) => x !== arr[i - 1]) : null,
   };
@@ -1690,14 +1695,14 @@ async function tickSchool() {
   const bell = bellOf();
   for (const b of bell) {
     const r = rows.find((x) => x.period === b.period);
-    if (!r) continue;
+    if (!r || r.free) continue;
     if (b.start - now === 5) {
       notifyOnce(`${date}|class|${b.period}`, { title: `5분 뒤 ${b.period}교시 ${r.subject}!`, sub: `${school.hm(b.start)} 시작 · 준비물 챙겨`, icon: '📚', countdown: 5 });
     }
   }
   // 점심시간 시작(4교시 끝) 에 메뉴
   const fourth = bell.find((b) => b.period === 4);
-  if (fourth && now === fourth.end && rows.length > 4) {
+  if (fourth && now === fourth.end && rows.some((x) => x.period > 4)) {
     const m = await school.meals(c.school, d, neisKey()).catch(() => ({}));
     if (m.lunch) notifyOnce(`${date}|lunch`, { title: '점심시간! 🍚', sub: m.lunch.dishes.slice(0, 5).join(', '), icon: '🍚', tone: 'happy' });
   }
@@ -1727,8 +1732,26 @@ ipcMain.on('school:set', (_e, patch) => {
   if (patch.classMin !== undefined && [40, 45, 50].includes(Number(patch.classMin))) c.classMin = Number(patch.classMin);
   if (patch.mealBrief !== undefined) c.mealBrief = !!patch.mealBrief;
   if (patch.classAlert !== undefined) c.classAlert = !!patch.classAlert;
+  if (patch.mine !== undefined) {
+    // "과목|분반" 글자들만, 너무 많지 않게
+    c.mine = Array.isArray(patch.mine) ? [...new Set(patch.mine.map(String).filter((x) => /^[^|]{1,40}\|\d{1,2}$/.test(x)))].slice(0, 40) : [];
+    school._cache.clear();
+  }
+  if (c.grade !== schoolCfg().grade) c.mine = []; // 학년이 바뀌면 고른 수업도 처음부터
   saveConfig({ school: c });
   pushSettings();
+});
+
+// 내 수업 고르기: 이번 주에 그 학년에서 열리는 수업 목록 (반 번호로 올라오는 보통 학교면 null)
+ipcMain.handle('school:courses', async () => {
+  const c = schoolCfg();
+  if (!c.school || !c.grade) return { ok: false, message: '학교와 학년을 먼저 골라 줘' };
+  try {
+    const list = await school.courses(c.school, c.grade, new Date(), neisKey());
+    return { ok: true, list, mine: Array.isArray(c.mine) ? c.mine : [] };
+  } catch (e) {
+    return { ok: false, message: e.message };
+  }
 });
 
 ipcMain.handle('school:key', async (_e, key) => {
@@ -1755,6 +1778,7 @@ async function briefCard() {
   const d = new Date();
   const card = {
     kind: 'brief',
+    tap: true, // 줄을 누르면 자세히 (PC 만)
     title: greeting(d.getHours()),
     sub: `${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일`,
     tone: 'happy',
@@ -1787,6 +1811,126 @@ async function briefCard() {
     .filter((a) => a.at <= end.getTime())
     .map((a) => ({ when: whenText(a.at).replace(/^오늘 /, ''), what: a.what && a.what !== '말한 시간' ? a.what : '' }));
   return card;
+}
+
+// ---------- 브리핑에서 줄을 누르면 자세히 (kind: 'detail') ----------
+const BACK = { id: 'brief:back', label: '← 브리핑' };
+
+async function weatherDetail() {
+  const w = await weather.get(placeConfig());
+  const hm = (h) => (h === 0 ? '밤 12시' : h < 12 ? `오전 ${h}시` : h === 12 ? '낮 12시' : `오후 ${h - 12}시`);
+  const rows = (w.hours || []).map((h, i) => ({
+    left: i === 0 ? '지금' : hm(h.hour),
+    text: `${h.emoji} ${h.temp}°`,
+    right: h.rain ? `☂️ ${h.rain}%` : '',
+    warn: h.rain >= 50,
+    now: i === 0,
+  }));
+  const more = [];
+  if (w.dust) more.push({ left: '미세먼지', text: `${w.dust.emoji} ${w.dust.label}`, right: `PM10 ${w.dust.pm10} · PM2.5 ${w.dust.pm25}`, warn: /나쁨/.test(w.dust.label) });
+  more.push({ left: '내일', text: `${w.tomorrow.emoji} ${w.tomorrow.min}° ~ ${w.tomorrow.max}°`, right: `☂️ ${w.tomorrow.rain}%`, warn: w.tomorrow.rain >= 50 });
+  return {
+    kind: 'detail',
+    icon: w.now.emoji,
+    title: `${w.place} 날씨`,
+    sub: `지금 ${w.now.temp}° ${w.now.desc} · 체감 ${w.now.feels}° · 최고 ${w.today.max}° 최저 ${w.today.min}°`,
+    sections: [
+      { title: '앞으로 12시간', rows },
+      { title: '더 보기', rows: more },
+    ],
+    foot: weather.advice(w),
+    tone: 'info',
+    actions: [BACK],
+  };
+}
+
+async function timetableDetail() {
+  const c = schoolCfg();
+  if (!c.school) return { title: '학교를 먼저 골라 줘 🏫', sub: '설정 → 학교', icon: '📚', tone: 'info', actions: [BACK] };
+  const rows = await dayTimetable(0).catch(() => null);
+  if (!rows || !rows.length) return { title: '오늘은 시간표가 없어', sub: '주말·방학이거나 학교가 아직 안 올렸어', icon: '📚', tone: 'info', actions: [BACK] };
+  const bell = bellOf();
+  const now = nowMinutes();
+  const list = rows.map((r) => {
+    const b = bell.find((x) => x.period === r.period);
+    return {
+      left: `${r.period}교시`,
+      text: r.free ? '☕ 공강' : r.subject,
+      right: b ? `${school.hm(b.start)}~${school.hm(b.end)}` : '',
+      free: !!r.free,
+      now: !!(b && b.start <= now && now < b.end),
+      done: !!(b && b.end <= now),
+    };
+  });
+  const notes = [];
+  if (rows.some((r) => r.free)) notes.push(`공강 ${rows.filter((r) => r.free).length}번`);
+  if (rows.elective && !rows.picked) notes.push('선택 과목은 그 시간 수업을 모아 보여 줘 (설정 → 학교 → 내 수업 고르기)');
+  return {
+    kind: 'detail',
+    icon: '📚',
+    title: '오늘 시간표',
+    sub: `${c.school.name} ${c.grade}학년 ${c.cls}반${rows.picked ? ' · 내 수업' : rows.rooms ? ' · 분반 기준' : ''}`,
+    sections: [{ rows: list }],
+    foot: notes.join(' · '),
+    tone: 'info',
+    actions: [BACK],
+  };
+}
+
+async function mealDetail() {
+  const c = schoolCfg();
+  if (!c.school) return { title: '학교를 먼저 골라 줘 🏫', sub: '설정 → 학교', icon: '🍚', tone: 'info', actions: [BACK] };
+  const [m, t] = await Promise.all([school.meals(c.school, new Date(), neisKey()).catch(() => ({})), school.meals(c.school, dayAfter(1), neisKey()).catch(() => ({}))]);
+  const sections = [];
+  for (const k of ['breakfast', 'lunch', 'dinner']) {
+    if (!m[k]) continue;
+    sections.push({ title: `${MEAL_KO[k]}${m[k].kcal ? ` · ${Math.round(m[k].kcal)}kcal` : ''}`, rows: m[k].dishes.map((d) => ({ text: d })) });
+  }
+  if (!sections.length) sections.push({ rows: [{ text: '오늘은 급식 정보가 없어' }] });
+  const tl = t.lunch || t.dinner;
+  return {
+    kind: 'detail',
+    icon: '🍚',
+    title: '오늘 급식',
+    sub: c.school.name,
+    sections,
+    foot: tl ? `내일 ${t.lunch ? '점심' : '저녁'}: ${tl.dishes.slice(0, 4).join(', ')}` : '',
+    tone: 'happy',
+    actions: [BACK],
+  };
+}
+
+function alarmsDetail() {
+  const list = loadAlarms().sort((a, b) => a.at - b.at);
+  return {
+    kind: 'detail',
+    icon: '⏰',
+    title: `알람 ${list.length}개`,
+    sub: '"알람 다 꺼"라고 하면 한 번에 꺼져',
+    sections: [{ rows: list.length ? list.map((a) => ({ left: whenText(a.at), text: a.what && a.what !== '말한 시간' ? a.what : '알람' })) : [{ text: '맞춰 둔 알람이 없어' }] }],
+    tone: 'info',
+    actions: [BACK],
+  };
+}
+
+async function briefDetail(what) {
+  try {
+    if (what === 'back') return showBrief();
+    if (what === 'today') {
+      if (!today) await refresh().catch(() => {});
+      return say(summary(), 25);
+    }
+    if (what === 'study') {
+      const card = studyCard(false);
+      delete card._r;
+      card.actions = [BACK];
+      return say(card, 25);
+    }
+    const card = what === 'weather' ? await weatherDetail() : what === 'class' ? await timetableDetail() : what === 'meal' ? await mealDetail() : what === 'alarms' ? alarmsDetail() : null;
+    if (card) say(card, 25);
+  } catch (e) {
+    say({ title: '자세히 못 불러왔어 😢', sub: e.message, icon: '😢', tone: 'sad', actions: [BACK] }, 6);
+  }
 }
 
 async function showBrief() {
@@ -2606,6 +2750,37 @@ async function studySelfTest(wait) {
 }
 
 // 학교 시험: 공개된 학교(서울 가락고 1학년 1반)로 진짜 나이스를 불러 본다 (임시 설정에서만)
+// 브리핑 시험: 영재고(경기과학고) 1학년 1반으로 브리핑을 띄우고, 줄을 진짜로 눌러서 자세히 카드가 뜨는지
+async function briefSelfTest(wait, shotDir) {
+  const before = loadConfig().school;
+  const g = (await school.search('경기과학고')).find((x) => x.name === '경기과학고등학교');
+  saveConfig({ school: { school: g, grade: 1, cls: 1, start: '08:40', classMin: 50, mealBrief: true, classAlert: false } });
+  const snap = async (name) => shotDir && fs.writeFileSync(path.join(shotDir, name), (await win.webContents.capturePage()).toPNG());
+  const js = (c) => win.webContents.executeJavaScript(c);
+  await showBrief();
+  await wait(1500);
+  const rows = await js("[...document.querySelectorAll('.br-card .tap')].map((e) => e.textContent.replace(/\\s+/g, ' ').trim().slice(0, 40))");
+  console.log('SELFTEST brief tappable:', rows.length, JSON.stringify(rows));
+  await snap('brief-main.png');
+  for (const [label, sel] of [
+    ['class', "[...document.querySelectorAll('.br-row.tap')].find((e) => e.textContent.includes('오늘 수업'))"],
+    ['meal', "[...document.querySelectorAll('.br-row.tap')].find((e) => e.textContent.includes('점심') || e.textContent.includes('저녁') || e.textContent.includes('아침'))"],
+    ['weather', "document.querySelector('.br-weather.tap')"],
+  ]) {
+    const ok = await js(`(() => { const n = ${sel}; if (!n) return false; n.click(); return true; })()`);
+    await wait(1800);
+    const info = await js("(() => { const c = document.querySelector('.dt-card'); if (!c) return null; return { title: c.querySelector('.dt-title').textContent, rows: [...c.querySelectorAll('.dt-row')].slice(0, 8).map((r) => r.textContent.replace(/\\s+/g, ' ').trim()), back: !!c.querySelector('.dt-actions button') }; })()");
+    console.log(`SELFTEST brief → ${label}:`, ok, JSON.stringify(info));
+    await snap(`brief-${label}.png`);
+    // ← 브리핑 버튼으로 돌아가기
+    await js("(() => { const b = document.querySelector('.dt-actions button'); if (b) b.click(); })()");
+    await wait(1500);
+    const back = await js("!!document.querySelector('.br-card')");
+    if (label === 'class') console.log('SELFTEST brief back button:', back);
+  }
+  saveConfig({ school: before || {} });
+}
+
 async function schoolSelfTest(wait) {
   const before = loadConfig().school;
   saveConfig({ school: {} });
@@ -2645,7 +2820,7 @@ async function schoolSelfTest(wait) {
     { PERIO: '5', ITRT_CNTNT: '자율연구Ⅱ2', CLRM_NM: 'AAaa1-2', CLASS_NM: null },
   ];
   const rr = school.fromRooms(roomRows, 1);
-  console.log('SELFTEST school rooms:', rr.map((x) => `${x.period}:${x.subject}`).join(' | '), '| elective', rr.elective, '| expect 1:수학Ⅱ | 2:일반물리학 / 인공지능 | 5:자율연구Ⅱ');
+  console.log('SELFTEST school rooms:', rr.map((x) => `${x.period}:${x.subject}`).join(' | '), '| elective', rr.elective, '| expect 1:수학Ⅱ | 2:일반물리학 / 인공지능 | 3:공강 | 4:공강 | 5:자율연구Ⅱ');
   closeSettings();
   saveConfig({ school: before || {} });
   await wait(700);
@@ -2819,6 +2994,13 @@ function selfTest() {
     // AI_STUDYTEST=1 : 집중 기록·주간 리포트만 시험하고 끝낸다
     if (process.env.AI_STUDYTEST) {
       await studySelfTest(wait).catch((e) => console.log('SELFTEST study crashed:', e.stack));
+      app.quit();
+      return;
+    }
+    // AI_BRIEFTEST=1 : 브리핑 → 줄 눌러서 자세히 보기만 시험하고 끝낸다
+    if (process.env.AI_BRIEFTEST) {
+      await wait(9000); // 켤 때 저절로 뜨는 아침 브리핑·안내가 지나가게
+      await briefSelfTest(wait, process.env.AI_SELFTEST_SHOT).catch((e) => console.log('SELFTEST brief crashed:', e.stack));
       app.quit();
       return;
     }
