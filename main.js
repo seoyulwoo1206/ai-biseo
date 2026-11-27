@@ -3660,9 +3660,10 @@ function moveWindowTo(x, y) {
 }
 
 // ---------- 던지기: 끌다가 휙 놓으면 그 빠르기만큼 날아가고, 화면 가장자리에서 튕긴다 ----------
-// 놓기 직전 0.09초 동안 창이 움직인 빠르기(px/초)로 던진다. 미끄러지다 마찰로 서서히 멈춘다.
-// 날아가는 거리 ≈ 빠르기 ÷ friction → 가장 세게 던져도 500px 남짓 (너무 멀리 안 가게)
-const FLING = { min: 450, max: 2600, scale: 0.85, friction: 4.5, bounce: 0.55, hard: 1300, stop: 40 };
+// 놓기 직전 0.06초 동안 창이 움직인 빠르기(px/초)로 던진다. 미끄러지다 마찰로 서서히 멈춘다.
+// 날아가는 거리 ≈ 빠르기 × scale ÷ friction → 가장 세게 던져도 500px 남짓 (너무 멀리 안 가게).
+// scale 을 키우면 처음에 더 빨리 날아가고, friction 을 같이 키워서 거리는 그대로 두고 더 빨리 멈춘다.
+const FLING = { min: 400, max: 2600, scale: 1.25, friction: 6.5, bounce: 0.55, hard: 1900, stop: 60 };
 let charRect = null; // 창 안에서 캐릭터가 있는 곳 (화면이 set-shape 로 알려 준 첫 칸)
 let dragTrail = []; // 끄는 동안의 창 위치 [{ t, x, y }]
 let flingTimer = null;
@@ -3675,7 +3676,7 @@ function trackDrag() {
 }
 
 function releaseVelocity(now = Date.now()) {
-  const pts = dragTrail.filter((p) => now - p.t <= 90);
+  const pts = dragTrail.filter((p) => now - p.t <= 60);
   if (pts.length < 2) return { vx: 0, vy: 0 };
   const a = pts[0];
   const b = pts[pts.length - 1];
